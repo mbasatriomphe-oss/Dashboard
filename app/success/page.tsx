@@ -18,7 +18,7 @@ function SuccessContent() {
   const amountPaid = parseFloat(searchParams.get("amount") || "0")
   const remainingBalance = parseFloat(searchParams.get("remaining") || "0")
   const receiptNumber = searchParams.get("receipt") || Math.floor(100000 + Math.random() * 900000).toString()
-  const date = new Date().toLocaleString()
+  const date = new Date().toLocaleString("fr-FR")
   const hasPartialPayment = remainingBalance > 0
 
   useEffect(() => {
@@ -63,17 +63,17 @@ function SuccessContent() {
           </div>
 
           <h1 className="mb-2 text-center text-2xl font-bold text-foreground">
-            {hasPartialPayment ? "Partial Payment Received" : "Payment Successful"}
+            {hasPartialPayment ? "Paiement partiel reçu" : "Paiement réussi"}
           </h1>
           <p className="mb-6 text-center text-muted-foreground">
-            {hasPartialPayment ? "Partial payment has been processed" : "Thank you for your purchase!"}
+            {hasPartialPayment ? "Le paiement partiel a été enregistré." : "Merci pour votre achat !"}
           </p>
 
           {/* Receipt Info */}
           <div className="mb-6 text-center p-4 bg-muted/50 rounded-lg">
-            <p className="font-semibold text-foreground">Receipt #{receiptNumber}</p>
+            <p className="font-semibold text-foreground">Reçu n° {receiptNumber}</p>
             <p className="text-sm text-muted-foreground">{date}</p>
-            <p className="text-xs text-muted-foreground mt-1">Processed by: {user?.name}</p>
+            <p className="text-xs text-muted-foreground mt-1">Traité par : {user?.name}</p>
           </div>
 
           <Separator className="my-4" />
@@ -81,7 +81,7 @@ function SuccessContent() {
           {/* Payment Details */}
           <div className="space-y-3">
             <div className="flex justify-between text-foreground">
-              <p className="font-medium">Amount Paid</p>
+              <p className="font-medium">Montant payé</p>
               <p className="font-bold text-lg text-emerald-600 dark:text-emerald-400">
                 ${amountPaid.toFixed(2)}
               </p>
@@ -89,7 +89,7 @@ function SuccessContent() {
 
             {hasPartialPayment && (
               <div className="flex justify-between text-foreground">
-                <p className="font-medium">Remaining Balance</p>
+                <p className="font-medium">Reste à payer</p>
                 <p className="font-bold text-lg text-amber-600 dark:text-amber-400">
                   ${remainingBalance.toFixed(2)}
                 </p>
@@ -104,7 +104,7 @@ function SuccessContent() {
               <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
                 <AlertCircle className="h-4 w-4 text-amber-600" />
                 <AlertDescription className="text-amber-800 dark:text-amber-200">
-                  This is a partial payment. The customer still owes <strong>${remainingBalance.toFixed(2)}</strong> to complete this order.
+                  Il s'agit d'un paiement partiel. Le client doit encore <strong>${remainingBalance.toFixed(2)}</strong> pour terminer cette commande.
                 </AlertDescription>
               </Alert>
             </>
@@ -114,11 +114,11 @@ function SuccessContent() {
           <div className="mt-6 flex flex-col gap-3 print:hidden">
             <Button onClick={handlePrint} variant="outline" className="w-full h-12">
               <Printer className="mr-2 h-4 w-4" />
-              Print Receipt
+              Imprimer le reçu
             </Button>
             <Button onClick={handleBackToPOS} className="w-full h-12">
               <Home className="mr-2 h-4 w-4" />
-              Back to POS
+              Retour au point de vente
             </Button>
           </div>
         </CardContent>

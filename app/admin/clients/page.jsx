@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { useAuth } from "../context/auth-context"
-import { useTheme } from "../context/theme-context"
+import { useAuth } from "../../context/auth-context"
+import { useTheme } from "../../context/theme-context" 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -53,7 +53,7 @@ const MOCK_CLIENTS = [
     name: "John Doe",
     email: "john@example.com",
     phone: "+1 234 567 8900",
-    totalPurchases: 45,
+    totalAchats: 45,
     totalSpent: 2450.00,
     lastPurchase: "2024-01-15",
     loyaltyPoints: 245,
@@ -70,7 +70,7 @@ const MOCK_CLIENTS = [
     name: "Jane Smith",
     email: "jane@example.com",
     phone: "+1 234 567 8901",
-    totalPurchases: 78,
+    totalAchats: 78,
     totalSpent: 4890.50,
     lastPurchase: "2024-01-16",
     loyaltyPoints: 489,
@@ -86,7 +86,7 @@ const MOCK_CLIENTS = [
     name: "Robert Johnson",
     email: "robert@example.com",
     phone: "+1 234 567 8902",
-    totalPurchases: 120,
+    totalAchats: 120,
     totalSpent: 8920.75,
     lastPurchase: "2024-01-14",
     loyaltyPoints: 892,
@@ -102,7 +102,7 @@ const MOCK_CLIENTS = [
     name: "Emily Brown",
     email: "emily@example.com",
     phone: "+1 234 567 8903",
-    totalPurchases: 15,
+    totalAchats: 15,
     totalSpent: 650.25,
     lastPurchase: "2024-01-10",
     loyaltyPoints: 65,
@@ -117,7 +117,7 @@ const MOCK_CLIENTS = [
     name: "Michael Wilson",
     email: "michael@example.com",
     phone: "+1 234 567 8904",
-    totalPurchases: 95,
+    totalAchats: 95,
     totalSpent: 6780.00,
     lastPurchase: "2024-01-17",
     loyaltyPoints: 678,
@@ -133,7 +133,7 @@ const MOCK_CLIENTS = [
     name: "Sarah Davis",
     email: "sarah@example.com",
     phone: "+1 234 567 8905",
-    totalPurchases: 8,
+    totalAchats: 8,
     totalSpent: 320.00,
     lastPurchase: "2023-12-28",
     loyaltyPoints: 32,
@@ -148,7 +148,7 @@ const MOCK_CLIENTS = [
     name: "David Martinez",
     email: "david@example.com",
     phone: "+1 234 567 8906",
-    totalPurchases: 156,
+    totalAchats: 156,
     totalSpent: 12450.80,
     lastPurchase: "2024-01-17",
     loyaltyPoints: 1245,
@@ -165,7 +165,7 @@ const MOCK_CLIENTS = [
     name: "Lisa Anderson",
     email: "lisa@example.com",
     phone: "+1 234 567 8907",
-    totalPurchases: 62,
+    totalAchats: 62,
     totalSpent: 3890.25,
     lastPurchase: "2024-01-16",
     loyaltyPoints: 389,
@@ -277,7 +277,7 @@ export default function ClientsPage() {
             <div>
               <h1 className="text-2xl font-bold text-foreground">Clients</h1>
               <p className="text-sm text-muted-foreground">
-                Gérez votre base de clients
+                Manage your customer database
               </p>
             </div>
           </div>
@@ -301,7 +301,7 @@ export default function ClientsPage() {
                   <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Clients totaux</p>
+                  <p className="text-sm text-muted-foreground">Total Clients</p>
                   <p className="text-2xl font-bold text-foreground">{stats.totalClients}</p>
                 </div>
               </div>
@@ -315,7 +315,7 @@ export default function ClientsPage() {
                   <DollarSign className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Chiffre d'affaires total</p>
+                  <p className="text-sm text-muted-foreground">Total Revenue</p>
                   <p className="text-2xl font-bold text-foreground">${stats.totalRevenue.toFixed(2)}</p>
                 </div>
               </div>
@@ -329,7 +329,7 @@ export default function ClientsPage() {
                   <TrendingUp className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Dépense moyenne</p>
+                  <p className="text-sm text-muted-foreground">Avg. Spent</p>
                   <p className="text-2xl font-bold text-foreground">${stats.avgSpent.toFixed(2)}</p>
                 </div>
               </div>
@@ -343,7 +343,7 @@ export default function ClientsPage() {
                   <Star className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Clients VIP</p>
+                  <p className="text-sm text-muted-foreground">VIP Clients</p>
                   <p className="text-2xl font-bold text-foreground">{stats.vipClients}</p>
                 </div>
               </div>
@@ -358,7 +358,7 @@ export default function ClientsPage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Rechercher des clients..."
+                  placeholder="Search clients..."
                   className="pl-9"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -367,10 +367,10 @@ export default function ClientsPage() {
 
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-full sm:w-40">
-                  <SelectValue placeholder="Statut" />
+                  <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tous les statuts</SelectItem>
+                  <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="vip">VIP</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
@@ -379,13 +379,13 @@ export default function ClientsPage() {
 
               <Select value={sortBy} onValueChange={setSortBy}>
                 <SelectTrigger className="w-full sm:w-48">
-                  <SelectValue placeholder="Trier par" />
+                  <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="totalSpent">Dépense totale</SelectItem>
-                  <SelectItem value="totalPurchases">Achats totaux</SelectItem>
-                  <SelectItem value="loyaltyPoints">Points de fidélité</SelectItem>
-                  <SelectItem value="name">Nom</SelectItem>
+                  <SelectItem value="totalSpent">Total Spent</SelectItem>
+                  <SelectItem value="totalAchats">Total Achats</SelectItem>
+                  <SelectItem value="loyaltyPoints">Loyalty Points</SelectItem>
+                  <SelectItem value="name">Name</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -412,7 +412,7 @@ export default function ClientsPage() {
                   <TableRow>
                     <TableHead>Client</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Purchases</TableHead>
+                    <TableHead className="text-right">Achats</TableHead>
                     <TableHead className="text-right">Total Spent</TableHead>
                     <TableHead className="text-right">Points</TableHead>
                     <TableHead>Last Purchase</TableHead>
@@ -429,7 +429,7 @@ export default function ClientsPage() {
                         </div>
                       </TableCell>
                       <TableCell>{getStatusBadge(client.status)}</TableCell>
-                      <TableCell className="text-right">{client.totalPurchases}</TableCell>
+                      <TableCell className="text-right">{client.totalAchats}</TableCell>
                       <TableCell className="text-right font-medium">${client.totalSpent.toFixed(2)}</TableCell>
                       <TableCell className="text-right">{client.loyaltyPoints}</TableCell>
                       <TableCell>{client.lastPurchase}</TableCell>
@@ -492,8 +492,8 @@ export default function ClientsPage() {
                         <p className="font-bold text-foreground">${client.totalSpent.toFixed(2)}</p>
                       </div>
                       <div>
-                        <p className="text-muted-foreground">Purchases</p>
-                        <p className="font-bold text-foreground">{client.totalPurchases}</p>
+                        <p className="text-muted-foreground">Achats</p>
+                        <p className="font-bold text-foreground">{client.totalAchats}</p>
                       </div>
                     </div>
                   </div>
@@ -541,8 +541,8 @@ export default function ClientsPage() {
               {/* Stats Grid */}
               <div className="grid grid-cols-4 gap-4">
                 <div className="p-3 bg-muted/50 rounded-lg text-center">
-                  <p className="text-2xl font-bold">{selectedClient.totalPurchases}</p>
-                  <p className="text-xs text-muted-foreground">Purchases</p>
+                  <p className="text-2xl font-bold">{selectedClient.totalAchats}</p>
+                  <p className="text-xs text-muted-foreground">Achats</p>
                 </div>
                 <div className="p-3 bg-muted/50 rounded-lg text-center">
                   <p className="text-2xl font-bold">${selectedClient.totalSpent.toFixed(0)}</p>
@@ -554,7 +554,7 @@ export default function ClientsPage() {
                 </div>
                 <div className="p-3 bg-muted/50 rounded-lg text-center">
                   <p className="text-2xl font-bold">
-                    ${(selectedClient.totalSpent / selectedClient.totalPurchases).toFixed(0)}
+                    ${(selectedClient.totalSpent / selectedClient.totalAchats).toFixed(0)}
                   </p>
                   <p className="text-xs text-muted-foreground">Avg. Order</p>
                 </div>
@@ -564,7 +564,7 @@ export default function ClientsPage() {
               <div>
                 <h4 className="font-semibold mb-3 flex items-center gap-2">
                   <ShoppingBag className="h-4 w-4" />
-                  Recent Purchases
+                  Recent Achats
                 </h4>
                 <div className="space-y-2">
                   {selectedClient.purchaseHistory.map((purchase) => (

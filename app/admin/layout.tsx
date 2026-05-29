@@ -9,6 +9,7 @@ import {
   ShoppingCart,
   Users,
   Building2,
+  Truck,
   BarChart3,
   Settings,
   Menu,
@@ -19,39 +20,58 @@ import {
   Moon,
   PackagePlus,
   FileSpreadsheet,
+  Coins,
+  TrendingUp,
+  UserCheck,
+  ArrowLeftRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 import { useAuth } from "../context/auth-context"
 import { useTheme } from "../context/theme-context"
+import { NotificationBell } from "../components/notification-bell"
 
-const navigation = [
-  { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
-  { name: "Products", href: "/admin/products", icon: Package },
-  { name: "Categories", href: "/admin/categories", icon: Package },
-  { name: "Orders", href: "/admin/orders", icon: ShoppingCart },
-  { name: "Customers", href: "/admin/customers", icon: Users },
-  { name: "Restocking", href: "/admin/restocking", icon: PackagePlus },
-  { name: "Stock Reports", href: "/admin/stock-reports", icon: FileSpreadsheet },
-  { name: "Organizations", href: "/admin/organizations", icon: Building2 },
-  { name: "Analytics", href: "/admin/analytics", icon: BarChart3 },
-  { name: "Settings", href: "/admin/settings", icon: Settings },
+const adminNavigation = [
+  { name: "Tableau de bord", href: "/admin", icon: LayoutDashboard },
+  { name: "Unités", href: "/admin/unites", icon: LayoutDashboard },
+  { name: "Produits", href: "/admin/products", icon: Package },
+  { name: "Catégories", href: "/admin/categories", icon: Package },
+  { name: "Devises", href: "/admin/devises", icon: Coins },
+  { name: "Taux de change", href: "/admin/taux", icon: TrendingUp },
+  { name: "Vendeurs", href: "/admin/vendeurs", icon: UserCheck },
+  { name: "Clients", href: "/admin/clients", icon: Users },
+  { name: "Ventes", href: "/admin/ventes", icon: ShoppingCart },
+  { name: "Retours", href: "/admin/retours", icon: ArrowLeftRight },
+  { name: "Commandes", href: "/admin/orders", icon: ShoppingCart },
+  { name: "Fournisseurs", href: "/admin/fournisseurs", icon: Truck },
+  { name: "Approvisionnements", href: "/admin/approvisionnements", icon: PackagePlus },
+  { name: "Lots", href: "/admin/lots", icon: Package },
+  { name: "Rapport Stock", href: "/admin/stock-reports", icon: FileSpreadsheet },
+  { name: "Tous les Rapports", href: "/admin/reports", icon: FileSpreadsheet },
+  { name: "Organisations", href: "/admin/organizations", icon: Building2 },
+  { name: "Analyses", href: "/admin/analytics", icon: BarChart3 },
+  { name: "Paramètres", href: "/admin/settings", icon: Settings },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
-  const { user, isLoading, isAdmin, logout } = useAuth()
+  const { user, isLoading, logout } = useAuth() as {
+    user: { role?: string; name?: string; email?: string } | null
+    isLoading: boolean
+    logout: () => void
+  }
   const { theme, toggleTheme } = useTheme()
+  const isAdminUser = user?.role === "admin"
 
-  // Check if user is admin
+  // Block any non-admin access to admin pages.
   useEffect(() => {
-    if (!isLoading && user && !isAdmin()) {
+    if (!isLoading && user && !isAdminUser) {
       router.push("/access-denied")
     }
-  }, [user, isLoading, isAdmin, router])
+  }, [user, isLoading, isAdminUser, router])
 
   // Show loading state
   if (isLoading) {
@@ -59,14 +79,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-muted-foreground">Loading...</p>
+          <p className="text-muted-foreground">Chargement...</p>
         </div>
       </div>
     )
   }
 
   // If not admin, return null (redirect will happen)
-  if (!user || !isAdmin()) {
+  if (!user || !isAdminUser) {
     return null
   }
 
@@ -75,7 +95,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="flex h-16 items-center justify-between px-6 border-b">
         <div className="flex items-center gap-2">
           <Store className="h-8 w-8 text-primary" />
-          <span className="text-xl font-bold text-foreground">POS Admin</span>
+          <span className="truncate text-xl font-bold text-foreground">Administration POS</span>
         </div>
         {mobile && (
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
@@ -85,7 +105,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
 
       <nav className="flex-1 space-y-1 px-4 py-4 overflow-y-auto">
-        {navigation.map((item) => {
+        {adminNavigation.map((item) => {
           const isActive = pathname === item.href
           return (
             <Button
@@ -117,15 +137,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {theme === "dark" ? (
             <>
               <Sun className="h-5 w-5" />
-              Light Mode
+              Mode clair
             </>
           ) : (
             <>
               <Moon className="h-5 w-5" />
-              Dark Mode
+              Mode sombre
             </>
           )}
         </Button>
+
+        <NotificationBell showLabel className="w-full justify-start" />
 
         {/* User Info */}
         <div className="px-3 py-2 rounded-lg bg-muted/50">
@@ -139,7 +161,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           onClick={() => router.push("/")}
         >
           <Store className="h-5 w-5" />
-          Back to POS
+          Retour au point de vente
         </Button>
 
         <Button
@@ -148,14 +170,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           onClick={logout}
         >
           <LogOut className="h-5 w-5" />
-          Logout
+          Déconnexion
         </Button>
       </div>
     </div>
   )
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen flex-col bg-background lg:flex-row">
       {/* Desktop Sidebar */}
       <div className="hidden lg:flex lg:flex-shrink-0">
         <div className="flex w-64 flex-col border-r bg-card">
@@ -165,7 +187,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Mobile Sidebar */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="p-0 w-64">
+        <SheetContent side="left" className="w-[88vw] max-w-sm p-0 sm:w-80">
           <Sidebar mobile />
         </SheetContent>
       </Sheet>
@@ -173,7 +195,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile Header */}
-        <div className="flex h-16 items-center justify-between border-b bg-card px-4 lg:hidden">
+        <div className="flex h-16 items-center justify-between gap-3 border-b bg-card px-4 lg:hidden">
           <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon">
@@ -181,17 +203,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </Button>
             </SheetTrigger>
           </Sheet>
-          <div className="flex items-center gap-2">
+          <div className="min-w-0 flex items-center gap-2">
             <Store className="h-6 w-6 text-primary" />
-            <span className="font-bold text-foreground">POS Admin</span>
+            <span className="truncate font-bold text-foreground">Administration POS</span>
           </div>
-          <Button variant="ghost" size="icon" onClick={toggleTheme}>
-            {theme === "dark" ? (
-              <Sun className="h-5 w-5" />
-            ) : (
-              <Moon className="h-5 w-5" />
-            )}
-          </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            <NotificationBell />
+            <Button variant="ghost" size="icon" onClick={toggleTheme}>
+              {theme === "dark" ? (
+                <Sun className="h-5 w-5" />
+              ) : (
+                <Moon className="h-5 w-5" />
+              )}
+            </Button>
+          </div>
         </div>
 
         {/* Page Content */}

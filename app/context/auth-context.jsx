@@ -2,36 +2,25 @@
 
 import { createContext, useContext, useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
-
-// Simulated users (in production, this would come from Laravel backend)
-const MOCK_USERS = [
-  {
-    id: "1",
-    username: "admin",
-    password: "admin123",
-    role: "admin",
-    name: "Administrator",
-    email: "admin@pos.com",
-  },
-  {
-    id: "2",
-    username: "seller1",
-    password: "seller123",
-    role: "seller",
-    name: "John Seller",
-    email: "john@pos.com",
-  },
-  {
-    id: "3",
-    username: "seller2",
-    password: "seller123",
-    role: "seller",
-    name: "Jane Seller",
-    email: "jane@pos.com",
-  },
-]
+import { backendRequest, clearStoredSession, getStoredToken, setStoredSession } from "../services/backend"
 
 const AuthContext = createContext(undefined)
+
+function normalizeUser(user) {
+  if (!user) {
+    return null
+  }
+
+  const fullName = [user.nom, user.post_nom, user.prenom].filter(Boolean).join(" ").trim()
+
+  return {
+    id: String(user.id),
+    username: user.email,
+    role: user.role ?? "user",
+    name: fullName || user.email,
+    email: user.email,
+  }
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -42,16 +31,71 @@ export function AuthProvider({ children }) {
   // Check for existing session on mount
   useEffect(() => {
     const savedUser = localStorage.getItem("pos_user")
+    const savedToken = getStoredToken()
+
+    // Restore user from localStorage immediately — no waiting for network
     if (savedUser) {
       try {
         const parsedUser = JSON.parse(savedUser)
         setUser(parsedUser)
+
+        // Vendeurs n'ont pas de token Sanctum : session locale suffisante
+        if (parsedUser.role === "vendeur" || !savedToken) {
+          setIsLoading(false)
+          return
+        }
+
+        // Validate token in background — won't block the UI
+        backendRequest("/user", {}, savedToken)
+          .then((response) => {
+            const currentUser = normalizeUser(response)
+            if (currentUser) {
+              setUser(currentUser)
+              localStorage.setItem("pos_user", JSON.stringify(currentUser))
+            } else {
+              clearStoredSession()
+              setUser(null)
+            }
+          })
+          .catch(() => {
+            clearStoredSession()
+            setUser(null)
+          })
+          .finally(() => {
+            setIsLoading(false)
+          })
+
+        return
       } catch (error) {
         console.error("Failed to parse user from localStorage:", error)
-        localStorage.removeItem("pos_user")
+        clearStoredSession()
       }
     }
-    setIsLoading(false)
+
+    // No saved user — check token only
+    if (!savedToken) {
+      setIsLoading(false)
+      return
+    }
+
+    backendRequest("/user", {}, savedToken)
+      .then((response) => {
+        const currentUser = normalizeUser(response)
+        if (currentUser) {
+          setUser(currentUser)
+          localStorage.setItem("pos_user", JSON.stringify(currentUser))
+        } else {
+          clearStoredSession()
+          setUser(null)
+        }
+      })
+      .catch(() => {
+        clearStoredSession()
+        setUser(null)
+      })
+      .finally(() => {
+        setIsLoading(false)
+      })
   }, [])
 
   // Redirect logic based on auth state
@@ -60,45 +104,78 @@ export function AuthProvider({ children }) {
 
     const isLoginPage = pathname === "/login"
     const isAdminRoute = pathname?.startsWith("/admin")
-
     if (!user && !isLoginPage) {
       router.push("/login")
     } else if (user && isLoginPage) {
-      router.push("/")
+      router.push(user.role === "admin" ? "/admin" : "/")
+    } else if (user && user.role === "admin" && !isAdminRoute) {
+      router.push("/admin")
+    } else if (user && user.role === "admin" && pathname === "/checkout") {
+      router.push("/admin")
     } else if (user && isAdminRoute && user.role !== "admin") {
       router.push("/access-denied")
     }
   }, [user, isLoading, pathname, router])
 
-  // Simulated login function (would call Laravel API in production)
-  const login = async (username, password) => {
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 500))
+  const login = async (email, password, isVendeur = false) => {
+    try {
+      if (isVendeur) {
+        // Connexion vendeur : email + password
+        const response = await backendRequest("/login-vendeur", {
+          method: "POST",
+          body: JSON.stringify({ email, password }),
+        })
 
-    const foundUser = MOCK_USERS.find(
-      (u) => u.username === username && u.password === password
-    )
+        const vendeurData = response.user
+        if (!vendeurData) {
+          return { success: false, error: "Réponse vendeur incomplète" }
+        }
 
-    if (foundUser) {
-      const userWithoutPassword = {
-        id: foundUser.id,
-        username: foundUser.username,
-        role: foundUser.role,
-        name: foundUser.name,
-        email: foundUser.email,
+        const currentUser = normalizeUser(vendeurData)
+        setUser(currentUser)
+        if (response.token) {
+          setStoredSession(response.token, currentUser)
+        } else {
+          localStorage.removeItem("pos_token")
+          localStorage.setItem("pos_user", JSON.stringify(currentUser))
+        }
+        return { success: true, user: currentUser }
       }
-      setUser(userWithoutPassword)
-      localStorage.setItem("pos_user", JSON.stringify(userWithoutPassword))
-      return { success: true, user: userWithoutPassword }
-    }
 
-    return { success: false, error: "Invalid username or password" }
+      const response = await backendRequest("/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      })
+
+      const currentUser = normalizeUser(response.user)
+
+      if (!response.token || !currentUser) {
+        return { success: false, error: "Backend login response is incomplete" }
+      }
+
+      setUser(currentUser)
+      setStoredSession(response.token, currentUser)
+      return { success: true, user: currentUser }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Impossible de se connecter au backend",
+      }
+    }
   }
 
-  const logout = () => {
-    setUser(null)
-    localStorage.removeItem("pos_user")
-    router.push("/login")
+  const logout = async () => {
+    try {
+      await backendRequest("/logout", {
+        method: "POST",
+      })
+    } catch {
+      // Ignore logout failures and clear local session anyway.
+    } finally {
+      clearStoredSession()
+      setUser(null)
+      router.push("/login")
+    }
   }
 
   const isAdmin = () => {
@@ -106,7 +183,7 @@ export function AuthProvider({ children }) {
   }
 
   const isSeller = () => {
-    return user?.role === "seller"
+    return user?.role === "vendeur"
   }
 
   return (

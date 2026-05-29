@@ -57,14 +57,14 @@ export default function InventoryModal({ isOpen, onClose }: InventoryModalProps)
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle>Inventory Management</DialogTitle>
+          <DialogTitle>Gestion des stocks</DialogTitle>
         </DialogHeader>
 
         <Tabs defaultValue="inventory" className="flex-1 flex flex-col">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="inventory">All Inventory</TabsTrigger>
+            <TabsTrigger value="inventory">Tout le stock</TabsTrigger>
             <TabsTrigger value="alerts" className="relative">
-              Low Stock Alerts
+              Alertes de stock faible
               {lowStockItems.length > 0 && (
                 <Badge variant="destructive" className="ml-2 h-5 w-5 p-0 text-xs">
                   {lowStockItems.length}
@@ -78,7 +78,7 @@ export default function InventoryModal({ isOpen, onClose }: InventoryModalProps)
               <div className="relative flex-1">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search inventory..."
+                  placeholder="Rechercher dans le stock..."
                   className="pl-8"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -102,10 +102,10 @@ export default function InventoryModal({ isOpen, onClose }: InventoryModalProps)
                         <div>
                           <p className="font-medium">{item.name}</p>
                           <p className="text-sm text-muted-foreground">
-                            Category: {item.category} | Supplier: {item.supplier}
+                            Catégorie : {item.category} | Fournisseur : {item.supplier}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            Cost: ${item.cost} | Price: ${item.price}
+                            Coût : ${item.cost} | Prix : ${item.price}
                           </p>
                         </div>
                       </div>
@@ -119,7 +119,7 @@ export default function InventoryModal({ isOpen, onClose }: InventoryModalProps)
                         <div className="flex gap-1">
                           <Input
                             type="number"
-                            placeholder="Add stock"
+                            placeholder="Ajouter du stock"
                             className="w-20 h-8"
                             onKeyPress={(e) => {
                               if (e.key === "Enter") {
@@ -149,7 +149,7 @@ export default function InventoryModal({ isOpen, onClose }: InventoryModalProps)
               {lowStockItems.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>No low stock alerts</p>
+                  <p>Aucune alerte de stock faible</p>
                 </div>
               ) : (
                 lowStockItems.map((item) => (
@@ -161,14 +161,14 @@ export default function InventoryModal({ isOpen, onClose }: InventoryModalProps)
                           <div>
                             <p className="font-medium text-red-800">{item.name}</p>
                             <p className="text-sm text-red-600">
-                              Only {item.stock} left (threshold: {item.lowStockThreshold})
+                              Il reste seulement {item.stock} article(s) (seuil : {item.lowStockThreshold})
                             </p>
                           </div>
                         </div>
                         <div className="flex gap-1">
                           <Input
                             type="number"
-                            placeholder="Restock"
+                            placeholder="Réapprovisionner"
                             className="w-20 h-8"
                             onKeyPress={(e) => {
                               if (e.key === "Enter") {
@@ -181,7 +181,7 @@ export default function InventoryModal({ isOpen, onClose }: InventoryModalProps)
                               }
                             }}
                           />
-                          <Button size="sm">Restock</Button>
+                          <Button size="sm">Réapprovisionner</Button>
                         </div>
                       </div>
                     </CardContent>

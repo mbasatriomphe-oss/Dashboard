@@ -109,7 +109,7 @@ export default function RestockingPage() {
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [restockQuantity, setRestockQuantity] = useState("")
   
-  // Bulk restock
+  // Reapprovisionnement multiple
   const [bulkRestockModal, setBulkRestockModal] = useState(false)
   const [selectedProducts, setSelectedProducts] = useState([])
   const [bulkQuantities, setBulkQuantities] = useState({})
@@ -198,7 +198,7 @@ export default function RestockingPage() {
     setTimeout(() => setSuccessMessage(""), 3000)
   }
 
-  // Handle bulk restock
+  // Handle Reapprovisionnement multiple
   const toggleProductSelection = (productId) => {
     setSelectedProducts((prev) =>
       prev.includes(productId)
@@ -285,7 +285,7 @@ export default function RestockingPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Restocking</h1>
+          <h1 className="text-3xl font-bold text-foreground">Reapprovisionnement</h1>
           <p className="text-muted-foreground">Manage your inventory and restock products</p>
         </div>
         <div className="flex gap-2">
@@ -298,7 +298,7 @@ export default function RestockingPage() {
             disabled={selectedProducts.length === 0}
           >
             <PackagePlus className="h-4 w-4 mr-2" />
-            Bulk Restock ({selectedProducts.length})
+            Reapprovisionnement multiple ({selectedProducts.length})
           </Button>
         </div>
       </div>
@@ -366,7 +366,7 @@ export default function RestockingPage() {
                 <Truck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Recent Restocks</p>
+                <p className="text-sm text-muted-foreground">Réapprovisionnements récents</p>
                 <p className="text-2xl font-bold text-foreground">{restockHistory.length}</p>
               </div>
             </div>
@@ -378,11 +378,11 @@ export default function RestockingPage() {
         <TabsList>
           <TabsTrigger value="inventory">
             <Package className="h-4 w-4 mr-2" />
-            Inventory
+            Stock
           </TabsTrigger>
           <TabsTrigger value="history">
             <History className="h-4 w-4 mr-2" />
-            Restock History
+            Historique des réapprovisionnements
           </TabsTrigger>
         </TabsList>
 
@@ -394,7 +394,7 @@ export default function RestockingPage() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search products..."
+                    placeholder="Rechercher des produits..."
                     className="pl-9"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -403,25 +403,25 @@ export default function RestockingPage() {
 
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                   <SelectTrigger className="w-full lg:w-40">
-                    <SelectValue placeholder="Category" />
+                    <SelectValue placeholder="Catégorie" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    <SelectItem value="food">Food</SelectItem>
-                    <SelectItem value="drinks">Drinks</SelectItem>
+                    <SelectItem value="all">Toutes les catégories</SelectItem>
+                    <SelectItem value="food">Aliments</SelectItem>
+                    <SelectItem value="drinks">Boissons</SelectItem>
                     <SelectItem value="desserts">Desserts</SelectItem>
                   </SelectContent>
                 </Select>
 
                 <Select value={stockFilter} onValueChange={setStockFilter}>
                   <SelectTrigger className="w-full lg:w-40">
-                    <SelectValue placeholder="Stock Level" />
+                    <SelectValue placeholder="Niveau de stock" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Stock</SelectItem>
-                    <SelectItem value="low">Low Stock</SelectItem>
-                    <SelectItem value="out">Out of Stock</SelectItem>
-                    <SelectItem value="ok">In Stock</SelectItem>
+                    <SelectItem value="all">Tout le stock</SelectItem>
+                    <SelectItem value="low">Stock faible</SelectItem>
+                    <SelectItem value="out">Rupture de stock</SelectItem>
+                    <SelectItem value="ok">En stock</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -455,13 +455,13 @@ export default function RestockingPage() {
                           }}
                         />
                       </TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-center">Current Stock</TableHead>
-                      <TableHead className="text-center">Min Stock</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Supplier</TableHead>
-                      <TableHead>Last Restock</TableHead>
+                      <TableHead>Produit</TableHead>
+                      <TableHead>Catégorie</TableHead>
+                      <TableHead className="text-center">Stock actuel</TableHead>
+                      <TableHead className="text-center">Stock min.</TableHead>
+                      <TableHead>Statut</TableHead>
+                      <TableHead>Fournisseur</TableHead>
+                      <TableHead>Dernier réapprovisionnement</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -510,7 +510,7 @@ export default function RestockingPage() {
                             onClick={() => handleSingleRestock(product)}
                           >
                             <Plus className="h-4 w-4 mr-1" />
-                            Restock
+                            Réapprovisionner
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -667,11 +667,11 @@ export default function RestockingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Bulk Restock Modal */}
+      {/* Reapprovisionnement multiple Modal */}
       <Dialog open={bulkRestockModal} onOpenChange={setBulkRestockModal}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Bulk Restock</DialogTitle>
+            <DialogTitle>Reapprovisionnement multiple</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
             <p className="text-muted-foreground">
@@ -718,7 +718,7 @@ export default function RestockingPage() {
               Cancel
             </Button>
             <Button onClick={confirmBulkRestock}>
-              Confirm Bulk Restock
+              Confirm Reapprovisionnement multiple
             </Button>
           </DialogFooter>
         </DialogContent>

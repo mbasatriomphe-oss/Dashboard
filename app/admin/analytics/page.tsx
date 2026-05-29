@@ -220,8 +220,8 @@ export default function AnalyticsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold">Analytics</h1>
-          <p className="text-muted-foreground">Comprehensive business insights and performance metrics</p>
+          <h1 className="text-2xl lg:text-3xl font-bold">Analyses</h1>
+          <p className="text-muted-foreground">Vue d'ensemble des performances et indicateurs métier</p>
         </div>
         <div className="flex gap-2">
           <Select value={timeRange} onValueChange={setTimeRange}>
@@ -229,14 +229,14 @@ export default function AnalyticsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="7d">7 Days</SelectItem>
-              <SelectItem value="30d">30 Days</SelectItem>
-              <SelectItem value="90d">90 Days</SelectItem>
+              <SelectItem value="7d">7 jours</SelectItem>
+              <SelectItem value="30d">30 jours</SelectItem>
+              <SelectItem value="90d">90 jours</SelectItem>
             </SelectContent>
           </Select>
           <Button variant="outline">
             <Download className="h-4 w-4 mr-2" />
-            Export
+            Exporter
           </Button>
         </div>
       </div>
@@ -245,7 +245,7 @@ export default function AnalyticsPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium">Chiffre d'affaires total</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -259,14 +259,14 @@ export default function AnalyticsPage() {
               <span className={analytics.revenue.growth >= 0 ? "text-green-500" : "text-red-500"}>
                 {formatGrowth(analytics.revenue.growth)}
               </span>
-              <span className="ml-1">from last period</span>
+              <span className="ml-1">par rapport à la période précédente</span>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
+            <CardTitle className="text-sm font-medium">Commandes totales</CardTitle>
             <ShoppingCart className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -280,14 +280,14 @@ export default function AnalyticsPage() {
               <span className={analytics.orders.growth >= 0 ? "text-green-500" : "text-red-500"}>
                 {formatGrowth(analytics.orders.growth)}
               </span>
-              <span className="ml-1">from last period</span>
+              <span className="ml-1">par rapport à la période précédente</span>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
+            <CardTitle className="text-sm font-medium">Clients totaux</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -301,14 +301,14 @@ export default function AnalyticsPage() {
               <span className={analytics.customers.growth >= 0 ? "text-green-500" : "text-red-500"}>
                 {formatGrowth(analytics.customers.growth)}
               </span>
-              <span className="ml-1">from last period</span>
+              <span className="ml-1">par rapport à la période précédente</span>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg Order Value</CardTitle>
+            <CardTitle className="text-sm font-medium">Valeur moyenne de commande</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -322,7 +322,7 @@ export default function AnalyticsPage() {
               <span className={analytics.avgOrderValue.growth >= 0 ? "text-green-500" : "text-red-500"}>
                 {formatGrowth(analytics.avgOrderValue.growth)}
               </span>
-              <span className="ml-1">from last period</span>
+              <span className="ml-1">par rapport à la période précédente</span>
             </div>
           </CardContent>
         </Card>
@@ -333,7 +333,7 @@ export default function AnalyticsPage() {
         {/* Top Products */}
         <Card>
           <CardHeader>
-            <CardTitle>Top Performing Products</CardTitle>
+            <CardTitle>Produits les plus performants</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -346,7 +346,7 @@ export default function AnalyticsPage() {
                     <div>
                       <p className="font-medium text-sm">{product.name}</p>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">{product.quantity} sold</span>
+                        <span className="text-xs text-muted-foreground">{product.quantity} vendus</span>
                         {product.growth >= 0 ? (
                           <Badge variant="secondary" className="text-xs bg-green-100 text-green-700">
                             +{product.growth.toFixed(1)}%
@@ -375,7 +375,7 @@ export default function AnalyticsPage() {
         {/* Sales by Category */}
         <Card>
           <CardHeader>
-            <CardTitle>Sales by Category</CardTitle>
+            <CardTitle>Ventes par catégorie</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -387,7 +387,7 @@ export default function AnalyticsPage() {
                   </div>
                   <Progress value={category.percentage} className="h-2" />
                   <div className="text-xs text-muted-foreground text-right">
-                    {category.percentage.toFixed(1)}% of total sales
+                    {category.percentage.toFixed(1)} % du total des ventes
                   </div>
                 </div>
               ))}

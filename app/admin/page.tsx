@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import {
   TrendingUp,
   TrendingDown,
@@ -16,7 +17,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { db } from "../services/database"
+import { backendRequest, getStoredToken } from "../services/backend"
+import { useAuth } from "../context/auth-context"
 
 interface DashboardStats {
   totalSales: number
@@ -40,64 +42,200 @@ interface DashboardStats {
   }>
 }
 
+interface BackendClient {
+  id: number
+  nom?: string
+  post_nom?: string | null
+  prenom?: string | null
+}
+
+interface BackendProductLine {
+  id: number
+  quantite: number
+  prix_vente: number | string
+  produit?: {
+    id: number
+    nom?: string
+  } | null
+}
+
+interface BackendSale {
+  id: number
+  code?: string
+  date?: string
+  created_at?: string
+  id_client?: number | null
+  client?: BackendClient | null
+  lignes?: BackendProductLine[]
+}
+
+interface BackendStockItem {
+  id: number
+  code?: string
+  nom?: string
+  stock_actuel: number | string
+}
+
+interface BackendEnvelope<T> {
+  status?: string
+  data?: T
+}
+
+const LOW_STOCK_THRESHOLD = 10
+
+function toNumber(value: number | string | null | undefined): number {
+  return typeof value === "number" ? value : Number(value ?? 0)
+}
+
+function formatCustomerName(client?: BackendClient | null): string {
+  if (!client) {
+    return "Guest"
+  }
+
+  return [client.nom, client.post_nom, client.prenom].filter(Boolean).join(" ").trim() || "Guest"
+}
+
+function getSaleDate(sale: BackendSale): Date {
+  return new Date(sale.date ?? sale.created_at ?? Date.now())
+}
+
+function getSaleTotal(sale: BackendSale): number {
+  return (sale.lignes ?? []).reduce((sum, line) => sum + toNumber(line.quantite) * toNumber(line.prix_vente), 0)
+}
+
+function buildPeriod(range: string) {
+  const periodDays = range === "7d" ? 7 : range === "30d" ? 30 : 90
+  const endDate = new Date()
+  const startDate = new Date()
+  startDate.setDate(endDate.getDate() - periodDays)
+
+  const previousEndDate = new Date(startDate)
+  previousEndDate.setDate(previousEndDate.getDate() - 1)
+
+  const previousStartDate = new Date(previousEndDate)
+  previousStartDate.setDate(previousStartDate.getDate() - periodDays)
+
+  return { startDate, endDate, previousStartDate, previousEndDate }
+}
+
+function calculateGrowth(currentValue: number, previousValue: number): number {
+  if (previousValue === 0) {
+    return currentValue === 0 ? 0 : 100
+  }
+
+  return ((currentValue - previousValue) / previousValue) * 100
+}
+
+function aggregateProductSales(sales: BackendSale[]) {
+  const productSales = new Map<number, { name: string; sales: number }>()
+
+  for (const sale of sales) {
+    for (const line of sale.lignes ?? []) {
+      const productId = Number(line.produit?.id ?? line.id)
+      const existing = productSales.get(productId) || {
+        name: line.produit?.nom || `Produit #${productId}`,
+        sales: 0,
+      }
+
+      existing.sales += toNumber(line.quantite) * toNumber(line.prix_vente)
+      productSales.set(productId, existing)
+    }
+  }
+
+  return productSales
+}
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState("7d")
+  const [authError, setAuthError] = useState<string | null>(null)
+  const { user, isLoading: authLoading } = useAuth() as {
+    user: { role?: string } | null
+    isLoading: boolean
+  }
+  const router = useRouter()
 
   useEffect(() => {
-    loadDashboardData()
-  }, [timeRange])
+    if (authLoading) {
+      return
+    }
+
+    if (!user || user.role !== "admin") {
+      return
+    }
+
+    void loadDashboardData()
+  }, [timeRange, authLoading, user])
 
   const loadDashboardData = async () => {
+    const token = getStoredToken()
+
+    if (!token) {
+      setAuthError("Session expirée. Veuillez vous reconnecter.")
+      setStats(null)
+      setLoading(false)
+      router.push("/login")
+      return
+    }
+
+    setAuthError(null)
     setLoading(true)
     try {
-      // Simulate loading dashboard data
-      const endDate = new Date()
-      const startDate = new Date()
-      startDate.setDate(endDate.getDate() - (timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90))
+      const { startDate, endDate, previousStartDate, previousEndDate } = buildPeriod(timeRange)
 
-      const transactions = await db.getTransactions()
-      const customers = await db.getCustomers()
-      const lowStockItems = await db.getLowStockItems()
+      const [customersResponse, stocksResponse, currentSalesResponse, previousSalesResponse] = await Promise.all([
+        backendRequest<BackendEnvelope<BackendClient[]>>("/clients?per_page=all", {}, token),
+        backendRequest<BackendEnvelope<BackendStockItem[]>>("/stocks/disponible", {}, token),
+        backendRequest<BackendEnvelope<BackendSale[]>>("/ventes?per_page=all&sort_by=id&sort_direction=desc", {}, token),
+        backendRequest<BackendEnvelope<BackendSale[]>>("/ventes?per_page=all&sort_by=id&sort_direction=desc", {}, token),
+      ])
 
-      const filteredTransactions = transactions.filter((t) => {
-        const transactionDate = new Date(t.timestamp)
-        return transactionDate >= startDate && transactionDate <= endDate
+      const customers = customersResponse.data ?? []
+      const lowStockItems = (stocksResponse.data ?? []).filter((item) => toNumber(item.stock_actuel) <= LOW_STOCK_THRESHOLD)
+
+      const currentTransactions = (currentSalesResponse.data ?? []).filter((sale) => {
+        const saleDate = getSaleDate(sale)
+        return saleDate >= startDate && saleDate <= endDate
       })
 
-      const totalSales = filteredTransactions.reduce((sum, t) => sum + t.total, 0)
-      const totalOrders = filteredTransactions.length
-
-      // Mock growth calculations (in real app, compare with previous period)
-      const salesGrowth = Math.random() * 20 - 10 // -10% to +10%
-      const orderGrowth = Math.random() * 15 - 5 // -5% to +10%
-
-      // Calculate top products
-      const productSales = new Map()
-      filteredTransactions.forEach((transaction) => {
-        transaction.items.forEach((item) => {
-          const existing = productSales.get(item.id) || { name: item.name, sales: 0 }
-          existing.sales += item.total
-          productSales.set(item.id, existing)
-        })
+      const previousTransactions = (previousSalesResponse.data ?? []).filter((sale) => {
+        const saleDate = getSaleDate(sale)
+        return saleDate >= previousStartDate && saleDate <= previousEndDate
       })
 
-      const topProducts = Array.from(productSales.entries())
-        .map(([id, data]) => ({ id: Number(id), ...data, growth: Math.random() * 30 - 10 }))
+      const totalSales = currentTransactions.reduce((sum, sale) => sum + getSaleTotal(sale), 0)
+      const totalOrders = currentTransactions.length
+
+      const previousTotalSales = previousTransactions.reduce((sum, sale) => sum + getSaleTotal(sale), 0)
+      const previousTotalOrders = previousTransactions.length
+
+      const salesGrowth = calculateGrowth(totalSales, previousTotalSales)
+      const orderGrowth = calculateGrowth(totalOrders, previousTotalOrders)
+
+      const currentProductSales = aggregateProductSales(currentTransactions)
+      const previousProductSales = aggregateProductSales(previousTransactions)
+
+      const topProducts = Array.from(currentProductSales.entries())
+        .map(([id, data]) => ({
+          id,
+          name: data.name,
+          sales: data.sales,
+          growth: calculateGrowth(data.sales, previousProductSales.get(id)?.sales ?? 0),
+        }))
         .sort((a, b) => b.sales - a.sales)
         .slice(0, 5)
 
-      // Recent orders (mock data for demo)
-      const recentOrders = filteredTransactions
-        .slice(-5)
-        .reverse()
-        .map((t) => ({
-          id: t.id,
-          customer: `Customer ${t.customerId || "Guest"}`,
-          total: t.total,
+      const recentOrders = currentTransactions
+        .slice()
+        .sort((a, b) => getSaleDate(b).getTime() - getSaleDate(a).getTime())
+        .slice(0, 5)
+        .map((sale) => ({
+          id: sale.code ? String(sale.code) : String(sale.id),
+          customer: formatCustomerName(sale.client),
+          total: getSaleTotal(sale),
           status: "completed",
-          timestamp: new Date(t.timestamp),
+          timestamp: getSaleDate(sale),
         }))
 
       setStats({
@@ -112,16 +250,38 @@ export default function AdminDashboard() {
       })
     } catch (error) {
       console.error("Failed to load dashboard data:", error)
+      const message = error instanceof Error ? error.message : "Impossible de charger le tableau de bord."
+
+      if (/Unauthenticated|401/i.test(message)) {
+        setAuthError("Session expirée. Veuillez vous reconnecter.")
+        router.push("/login")
+        return
+      }
+
+      setAuthError(message)
+      setStats(null)
     } finally {
       setLoading(false)
     }
+  }
+
+  if (authError) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="max-w-md rounded-xl border bg-card p-6 text-center shadow-sm">
+          <h1 className="text-xl font-semibold">Tableau de bord indisponible</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{authError}</p>
+          <Button className="mt-4" onClick={() => router.push("/login")}>Retour à la connexion</Button>
+        </div>
+      </div>
+    )
   }
 
   if (loading || !stats) {
     return (
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h1 className="text-2xl lg:text-3xl font-bold">Dashboard</h1>
+          <h1 className="text-2xl lg:text-3xl font-bold">Tableau de bord</h1>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[...Array(4)].map((_, i) => (
@@ -143,7 +303,7 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl lg:text-3xl font-bold">Dashboard</h1>
+        <h1 className="text-2xl lg:text-3xl font-bold">Tableau de bord</h1>
         <div className="flex gap-2">
           {["7d", "30d", "90d"].map((range) => (
             <Button
@@ -152,7 +312,7 @@ export default function AdminDashboard() {
               size="sm"
               onClick={() => setTimeRange(range)}
             >
-              {range === "7d" ? "7 Days" : range === "30d" ? "30 Days" : "90 Days"}
+              {range === "7d" ? "7 jours" : range === "30d" ? "30 jours" : "90 jours"}
             </Button>
           ))}
         </div>
@@ -176,7 +336,7 @@ export default function AdminDashboard() {
               <span className={stats.salesGrowth >= 0 ? "text-green-500" : "text-red-500"}>
                 {Math.abs(stats.salesGrowth).toFixed(1)}%
               </span>
-              <span className="ml-1">from last period</span>
+              <span className="ml-1">par rapport à la période précédente</span>
             </div>
           </CardContent>
         </Card>
@@ -197,30 +357,30 @@ export default function AdminDashboard() {
               <span className={stats.orderGrowth >= 0 ? "text-green-500" : "text-red-500"}>
                 {Math.abs(stats.orderGrowth).toFixed(1)}%
               </span>
-              <span className="ml-1">from last period</span>
+              <span className="ml-1">par rapport à la période précédente</span>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
+            <CardTitle className="text-sm font-medium">Clients au total</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalCustomers}</div>
-            <p className="text-xs text-muted-foreground">Active customer base</p>
+            <p className="text-xs text-muted-foreground">Base clients active</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock Alerts</CardTitle>
+            <CardTitle className="text-sm font-medium">Alertes de stock faible</CardTitle>
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-500">{stats.lowStockItems}</div>
-            <p className="text-xs text-muted-foreground">Items need restocking</p>
+            <p className="text-xs text-muted-foreground">Les articles doivent être réapprovisionnés</p>
           </CardContent>
         </Card>
       </div>
@@ -230,7 +390,7 @@ export default function AdminDashboard() {
         {/* Top Products */}
         <Card>
           <CardHeader>
-            <CardTitle>Top Performing Products</CardTitle>
+            <CardTitle>Produits les plus performants</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -266,10 +426,10 @@ export default function AdminDashboard() {
         {/* Recent Orders */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Recent Orders</CardTitle>
+            <CardTitle>Commandes récentes</CardTitle>
             <Button variant="outline" size="sm">
               <Eye className="h-4 w-4 mr-2" />
-              View All
+              Voir tout
             </Button>
           </CardHeader>
           <CardContent>
@@ -295,26 +455,26 @@ export default function AdminDashboard() {
 
       {/* Quick Actions */}
       <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
+          <CardHeader>
+            <CardTitle>Actions rapides</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Button className="h-20 flex-col gap-2">
               <Package className="h-6 w-6" />
-              Add Product
+              Ajouter un produit
             </Button>
             <Button variant="outline" className="h-20 flex-col gap-2 bg-transparent">
               <ShoppingCart className="h-6 w-6" />
-              View Orders
+              Voir les commandes
             </Button>
             <Button variant="outline" className="h-20 flex-col gap-2 bg-transparent">
               <Users className="h-6 w-6" />
-              Manage Customers
+              Gérer les clients
             </Button>
             <Button variant="outline" className="h-20 flex-col gap-2 bg-transparent">
               <BarChart3 className="h-6 w-6" />
-              View Analytics
+              Voir les analyses
             </Button>
           </div>
         </CardContent>

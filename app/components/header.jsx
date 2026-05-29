@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
+import { NotificationBell } from "./notification-bell"
 import {
   Search,
   Settings,
@@ -36,10 +37,10 @@ export default function Header({ searchQuery, setSearchQuery }) {
   const { settings, toggleQuickActions, toggleClientPage } = useSettings()
 
   return (
-    <div className="sticky top-0 z-10 bg-background border-b">
-      <div className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-foreground">Point of Sale</h1>
+    <div className="sticky top-0 z-10 border-b bg-background">
+      <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+          <h1 className="truncate text-xl font-bold text-foreground sm:text-2xl">Point de vente</h1>
           
           {/* Role Badge */}
           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${
@@ -55,19 +56,19 @@ export default function Header({ searchQuery, setSearchQuery }) {
             ) : (
               <>
                 <Shield className="h-3.5 w-3.5" />
-                Seller
+                Vendeur
               </>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Search */}
-          <div className="relative w-64">
+          <div className="relative w-full min-w-0 sm:w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search products..."
-              className="pl-8 bg-muted/50"
+              placeholder="Rechercher des produits..."
+              className="bg-muted/50 pl-8"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -87,25 +88,27 @@ export default function Header({ searchQuery, setSearchQuery }) {
             )}
           </Button>
 
+          <NotificationBell />
+
           {/* Admin Button - only visible to admins */}
           {isAdmin() && (
-            <Button variant="outline" onClick={() => router.push("/admin")}>
+            <Button variant="outline" onClick={() => router.push("/admin")} className="hidden sm:inline-flex">
               <Settings className="h-4 w-4 mr-2" />
-              Admin
+              Administration
             </Button>
           )}
 
           {/* User Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="gap-2 max-w-[12rem]">
                 <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
                   <User className="h-3.5 w-3.5 text-primary" />
                 </div>
-                <span className="hidden sm:inline">{user?.name}</span>
+                <span className="hidden truncate sm:inline">{user?.name}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuContent align="end" className="w-[calc(100vw-1rem)] max-w-64 sm:w-64">
               <DropdownMenuLabel>
                 <div className="flex flex-col">
                   <span className="font-medium">{user?.name}</span>
@@ -149,7 +152,7 @@ export default function Header({ searchQuery, setSearchQuery }) {
                 className="cursor-pointer"
               >
                 <Users className="h-4 w-4 mr-2" />
-                View Clients
+                Voir les clients
               </DropdownMenuItem>
 
               <DropdownMenuSeparator />
@@ -159,7 +162,7 @@ export default function Header({ searchQuery, setSearchQuery }) {
                 className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
               >
                 <LogOut className="h-4 w-4 mr-2" />
-                Logout
+                Déconnexion
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -168,22 +171,22 @@ export default function Header({ searchQuery, setSearchQuery }) {
 
       {/* Quick Actions Bar - when enabled */}
       {settings.quickActionsEnabled && (
-        <div className="flex items-center gap-2 px-4 pb-3 text-xs text-muted-foreground border-t pt-2 bg-muted/30">
-          <span className="font-medium">Quick Actions:</span>
+        <div className="flex flex-wrap items-center gap-2 border-t bg-muted/30 px-3 pb-3 pt-2 text-xs text-muted-foreground sm:px-4">
+          <span className="font-medium">Actions rapides :</span>
           <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">Ctrl+N</kbd>
-          <span>New Sale</span>
+          <span>Nouvelle vente</span>
           <span className="text-muted-foreground/50">|</span>
           <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">Ctrl+P</kbd>
-          <span>Pay</span>
+          <span>Payer</span>
           <span className="text-muted-foreground/50">|</span>
           <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">Ctrl+F</kbd>
-          <span>Search</span>
+          <span>Rechercher</span>
           <span className="text-muted-foreground/50">|</span>
           <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">Ctrl+D</kbd>
-          <span>Discount</span>
+          <span>Remise</span>
           <span className="text-muted-foreground/50">|</span>
           <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">Esc</kbd>
-          <span>Clear</span>
+          <span>Effacer</span>
         </div>
       )}
     </div>

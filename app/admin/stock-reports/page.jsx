@@ -1,8 +1,7 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import {
   Table,
@@ -37,92 +36,173 @@ import {
   History,
   FileText,
 } from "lucide-react"
-import { products } from "../../data/products"
+import { backendRequest } from "@/app/services/backend"
 
-// Generate comprehensive stock data
-const generateStockData = () => {
-  return products.map((product, index) => {
-    const currentStock = Math.floor(Math.random() * 150) + 5
-    const minStock = 10
-    const maxStock = 150
-    const costPrice = product.price * 0.6
-    const movements = []
-    
-    // Generate random movements for the last 30 days
-    for (let i = 0; i < 10; i++) {
-      const date = new Date()
-      date.setDate(date.getDate() - Math.floor(Math.random() * 30))
-      const type = Math.random() > 0.3 ? "sale" : "restock"
-      const quantity = type === "sale" 
-        ? Math.floor(Math.random() * 10) + 1 
-        : Math.floor(Math.random() * 50) + 10
-      movements.push({
-        date: date.toISOString().split("T")[0],
-        type,
-        quantity,
-        balance: currentStock + (type === "sale" ? quantity : -quantity),
-      })
+const DEFAULT_PRODUCT_IMAGE =
+  "data:image/svg+xml;charset=UTF-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120"><rect width="160" height="120" rx="18" fill="#f3f4f6"/><path d="M30 84h100l-12-28H42L30 84Z" fill="#cbd5e1"/><circle cx="58" cy="52" r="8" fill="#94a3b8"/><circle cx="102" cy="52" r="8" fill="#94a3b8"/><path d="M52 31h56" stroke="#94a3b8" stroke-width="6" stroke-linecap="round"/></svg>',
+  )
+
+function safeNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "-"
+  }
+
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? "-" : date.toISOString().split("T")[0]
+}
+
+function getRelation(source, relationName) {
+  return source?.[relationName] ?? source?.[relationName.replace(/([A-Z])/g, "_$1").toLowerCase()]
+}
+
+function makeRateKey(sourceCurrencyId, targetCurrencyId) {
+  return `${sourceCurrencyId}:${targetCurrencyId}`
+}
+
+function getCurrencyLabel(currency, fallback = "") {
+  return currency?.symbole || currency?.code || currency?.nom || fallback
+}
+
+function resolveRate(rateByPair, sourceCurrencyId, targetCurrencyId) {
+  if (!sourceCurrencyId || !targetCurrencyId) {
+    return 1
+  }
+
+  if (sourceCurrencyId === targetCurrencyId) {
+    return 1
+  }
+
+  return rateByPair[makeRateKey(sourceCurrencyId, targetCurrencyId)] ?? null
+}
+
+function normalizeRows(payload) {
+  if (Array.isArray(payload)) {
+    return payload
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data
+  }
+
+  if (Array.isArray(payload?.data?.data)) {
+    return payload.data.data
+  }
+
+  return []
+}
+
+function buildInventoryData(products, stocks, lots) {
+  const stockByProductId = new Map(stocks.map((item) => [Number(item.id), item]))
+  const lotsByProductId = new Map()
+
+  lots.forEach((lot) => {
+    const productId = Number(lot.id_produit ?? getRelation(lot, "produit")?.id)
+    if (!lotsByProductId.has(productId)) {
+      lotsByProductId.set(productId, [])
     }
-    
+    lotsByProductId.get(productId).push(lot)
+  })
+
+  return products.map((product, index) => {
+    const stockRow = stockByProductId.get(Number(product.id))
+    const productLots = [...(lotsByProductId.get(Number(product.id)) ?? [])].sort((a, b) => {
+      const firstDate = new Date(a.date_reception ?? a.created_at ?? 0).getTime()
+      const secondDate = new Date(b.date_reception ?? b.created_at ?? 0).getTime()
+      return secondDate - firstDate
+    })
+    const latestLot = productLots[0]
+    const latestLine = getRelation(latestLot, "ligneApprovisionnement")
+    const latestApprovisionnement = getRelation(latestLot, "approvisionnement")
+    const latestCurrency = getRelation(latestLot, "devise")
+    const currentStock = safeNumber(stockRow?.stock_actuel)
+    const totalReceived = productLots.reduce((sum, lot) => sum + safeNumber(lot.quantite_initial), 0)
+    const costPrice = safeNumber(latestLine?.prix_unitaire, totalReceived > 0 ? totalReceived / Math.max(productLots.length, 1) : 0)
+    const retailPrice = safeNumber(latestLine?.prix_vente, costPrice)
+    const minStock = Math.max(5, Math.min(20, Math.round(totalReceived * 0.1) || 5))
+    const maxStock = Math.max(currentStock + minStock, totalReceived || currentStock + 20)
+    const restocksLast30Days = productLots.filter((lot) => {
+      const date = new Date(lot.date_reception ?? lot.created_at ?? 0)
+      return Number.isFinite(date.getTime()) && date >= new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    }).length
+
     return {
       ...product,
-      sku: `SKU-${String(index + 1).padStart(4, "0")}`,
+      sku: product.code || `SKU-${String(index + 1).padStart(4, "0")}`,
+      name: product.nom || product.name || "Produit",
+      category: getRelation(product, "categorie")?.nom || product.categorie_nom || product.category || "Non catégorisé",
+      image: product.photo ? `/storage/${product.photo}` : product.image || DEFAULT_PRODUCT_IMAGE,
+      sourceCurrencyId: latestCurrency?.id ?? latestLot?.id_devise ?? null,
+      sourceCurrencyCode: latestCurrency?.code ?? latestLot?.devise?.code ?? "",
+      sourceCurrencySymbol: getCurrencyLabel(latestCurrency, latestLot?.devise?.symbole ?? ""),
       currentStock,
       minStock,
       maxStock,
       costPrice,
+      price: retailPrice,
       totalValue: currentStock * costPrice,
-      retailValue: currentStock * product.price,
-      supplier: ["Supplier A", "Supplier B", "Supplier C"][Math.floor(Math.random() * 3)],
-      lastRestock: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      movements: movements.sort((a, b) => new Date(b.date) - new Date(a.date)),
-      salesLast30Days: Math.floor(Math.random() * 100) + 10,
-      restocksLast30Days: Math.floor(Math.random() * 3) + 1,
+      retailValue: currentStock * retailPrice,
+      supplier: latestApprovisionnement?.fournisseur?.nom || "—",
+      lastRestock: formatDate(latestLot?.date_reception),
+      movements: [],
+      salesLast30Days: Math.max(0, totalReceived - currentStock),
+      restocksLast30Days,
+      unitLabel: getRelation(product, "unite")?.symbole || getRelation(product, "unite")?.nom || "",
+      lots: productLots,
     }
   })
 }
 
-// Restock history data
-const RESTOCK_HISTORY = [
-  {
-    id: "RS001",
-    date: "2024-01-17",
-    products: [
-      { name: "Cheeseburger", sku: "SKU-0001", quantity: 50, cost: 5.39 },
-      { name: "French Fries", sku: "SKU-0005", quantity: 100, cost: 2.39 },
-    ],
-    totalCost: 509.00,
-    supplier: "Supplier A",
-    status: "completed",
-    processedBy: "Admin",
-  },
-  {
-    id: "RS002",
-    date: "2024-01-15",
-    products: [
-      { name: "Coca Cola", sku: "SKU-0006", quantity: 200, cost: 1.49 },
-      { name: "Iced Tea", sku: "SKU-0007", quantity: 150, cost: 1.79 },
-    ],
-    totalCost: 566.50,
-    supplier: "Supplier B",
-    status: "completed",
-    processedBy: "Admin",
-  },
-  {
-    id: "RS003",
-    date: "2024-01-12",
-    products: [
-      { name: "Chocolate Cake", sku: "SKU-0011", quantity: 30, cost: 3.59 },
-    ],
-    totalCost: 107.70,
-    supplier: "Supplier C",
-    status: "completed",
-    processedBy: "Admin",
-  },
-]
+function buildRestockHistory(lots) {
+  const grouped = new Map()
+
+  lots.forEach((lot) => {
+    const approvisionnement = getRelation(lot, "approvisionnement")
+    const fournisseur = approvisionnement?.fournisseur
+    const lotCost = safeNumber(getRelation(lot, "ligneApprovisionnement")?.prix_unitaire)
+    const quantity = safeNumber(lot.quantite_initial)
+    const groupKey = approvisionnement?.id ?? lot.id
+
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, {
+        id: approvisionnement?.code || lot.numero_lot || `RS-${lot.id}`,
+        date: formatDate(lot.date_reception),
+        products: [],
+        totalCost: 0,
+        supplier: fournisseur?.nom || "—",
+        status: "terminé",
+        processedBy: approvisionnement?.user ? `${approvisionnement.user.nom ?? ""} ${approvisionnement.user.prenom ?? ""}`.trim() || "Système" : "Système",
+        sourceCurrencyId: getRelation(lot, "devise")?.id ?? lot.id_devise ?? null,
+        sourceCurrencySymbol: getCurrencyLabel(getRelation(lot, "devise"), ""),
+      })
+    }
+
+    const entry = grouped.get(groupKey)
+    entry.products.push({
+      name: getRelation(lot, "produit")?.nom || "Produit",
+      sku: getRelation(lot, "produit")?.code || lot.numero_lot || `LOT-${lot.id}`,
+      quantity,
+      cost: lotCost,
+      sourceCurrencyId: getRelation(lot, "devise")?.id ?? lot.id_devise ?? null,
+    })
+    entry.totalCost += quantity * lotCost
+  })
+
+  return Array.from(grouped.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+}
 
 export default function StockReportsPage() {
-  const [stockData] = useState(() => generateStockData())
+  const [stockData, setStockData] = useState([])
+  const [restockHistory, setRestockHistory] = useState([])
+  const [currencyOptions, setCurrencyOptions] = useState([])
+  const [selectedCurrencyId, setSelectedCurrencyId] = useState(null)
+  const [rateByPair, setRateByPair] = useState({})
   const [selectedReport, setSelectedReport] = useState("sheet")
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [stockFilter, setStockFilter] = useState("all")
@@ -130,10 +210,226 @@ export default function StockReportsPage() {
   const [sortOrder, setSortOrder] = useState("asc")
   const [dateRange, setDateRange] = useState("30")
   const [selectedProduct, setSelectedProduct] = useState(null)
+  const [movementByProduct, setMovementByProduct] = useState({})
+  const [movementLoadingByProduct, setMovementLoadingByProduct] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
-  // Calculate totals
+  useEffect(() => {
+    let cancelled = false
+
+    const loadStockReports = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const [productsResponse, stocksResponse, lotsResponse, devisesResponse] = await Promise.all([
+          backendRequest("/produits?per_page=all"),
+          backendRequest("/stocks/disponible"),
+          backendRequest("/lots?per_page=all"),
+          backendRequest("/devises?per_page=0"),
+        ])
+
+        const products = normalizeRows(productsResponse)
+        const stocks = normalizeRows(stocksResponse)
+        const lots = normalizeRows(lotsResponse)
+        const devises = normalizeRows(devisesResponse)
+        const productIndex = new Map(products.map((product) => [Number(product.id), product]))
+        const sourceRows = (stocks.length > 0 ? stocks : products).map((row) => ({
+          ...productIndex.get(Number(row.id)),
+          ...row,
+        }))
+        const inventory = buildInventoryData(sourceRows, stocks, lots)
+
+        if (!cancelled) {
+          setStockData(inventory)
+          setRestockHistory(buildRestockHistory(lots))
+          setCurrencyOptions(devises)
+          setSelectedCurrencyId((current) => current ?? devises[0]?.id ?? null)
+          setSelectedProduct(inventory[0]?.id ?? null)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setError(error instanceof Error ? error.message : "Impossible de charger les données depuis le backend.")
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadStockReports()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedCurrencyId || stockData.length === 0) {
+      setRateByPair({})
+      return
+    }
+
+    let cancelled = false
+
+    const loadRates = async () => {
+      try {
+        const nextRates = {}
+        const response = await backendRequest(`/taux/actif`)
+        const rates = normalizeRows(response)
+        const sourceCurrencyIds = new Set(
+          stockData
+            .map((product) => Number(product.sourceCurrencyId))
+            .filter((currencyId) => Number.isFinite(currencyId) && currencyId > 0),
+        )
+
+        rates.forEach((rate) => {
+          const sourceCurrencyId = Number(rate.devise_source)
+          const targetCurrencyId = Number(rate.devise_but)
+          const directValue = Number(rate.valeur)
+
+          if (!Number.isFinite(sourceCurrencyId) || !Number.isFinite(targetCurrencyId) || !Number.isFinite(directValue) || directValue <= 0) {
+            return
+          }
+
+          if (targetCurrencyId === Number(selectedCurrencyId) && sourceCurrencyIds.has(sourceCurrencyId)) {
+            nextRates[makeRateKey(sourceCurrencyId, selectedCurrencyId)] = directValue
+          }
+
+          if (sourceCurrencyId === Number(selectedCurrencyId) && sourceCurrencyIds.has(targetCurrencyId)) {
+            nextRates[makeRateKey(targetCurrencyId, selectedCurrencyId)] = 1 / directValue
+          }
+        })
+
+        if (!cancelled) {
+          setRateByPair(nextRates)
+        }
+      } catch {
+        if (!cancelled) {
+          setRateByPair({})
+        }
+      }
+    }
+
+    loadRates()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCurrencyId, stockData])
+
+  const selectedCurrency = useMemo(
+    () => currencyOptions.find((currency) => Number(currency.id) === Number(selectedCurrencyId)) ?? null,
+    [currencyOptions, selectedCurrencyId],
+  )
+
+  const selectedCurrencySymbol = getCurrencyLabel(selectedCurrency, "$")
+
+  const valuedStockData = useMemo(() => {
+    return stockData.map((product) => {
+      const sourceCurrencyId = Number(product.sourceCurrencyId) || null
+      const rate = resolveRate(rateByPair, sourceCurrencyId, selectedCurrencyId)
+      const displayCostPrice = rate ? product.costPrice * rate : product.costPrice
+      const displayPrice = rate ? product.price * rate : product.price
+      const displayTotalValue = rate ? product.totalValue * rate : product.totalValue
+      const displayRetailValue = rate ? product.retailValue * rate : product.retailValue
+
+      return {
+        ...product,
+        conversionRate: rate,
+        displayCostPrice,
+        displayPrice,
+        displayTotalValue,
+        displayRetailValue,
+      }
+    })
+  }, [stockData, rateByPair, selectedCurrencyId])
+
+  const missingRateCount = useMemo(() => {
+    return valuedStockData.filter(
+      (product) =>
+        Number(product.sourceCurrencyId) > 0 &&
+        selectedCurrencyId &&
+        Number(product.sourceCurrencyId) !== Number(selectedCurrencyId) &&
+        product.conversionRate === null,
+    ).length
+  }, [valuedStockData, selectedCurrencyId])
+
+    const valuedRestockHistory = useMemo(() => {
+      return restockHistory.map((entry) => {
+        const entryRate = resolveRate(rateByPair, Number(entry.sourceCurrencyId) || null, selectedCurrencyId)
+
+        const products = entry.products.map((product) => {
+          const productRate = resolveRate(rateByPair, Number(product.sourceCurrencyId) || Number(entry.sourceCurrencyId) || null, selectedCurrencyId)
+          const convertedCost = productRate ? product.cost * productRate : product.cost
+
+          return {
+            ...product,
+            displayCost: convertedCost,
+          }
+        })
+
+        return {
+          ...entry,
+          products,
+          displayTotalCost: entryRate ? entry.totalCost * entryRate : entry.totalCost,
+        }
+      })
+    }, [restockHistory, rateByPair, selectedCurrencyId])
+
+  useEffect(() => {
+    if (!selectedProduct || movementByProduct[selectedProduct] || movementLoadingByProduct[selectedProduct]) {
+      return
+    }
+
+    let cancelled = false
+
+    const loadMovements = async () => {
+      setMovementLoadingByProduct((current) => ({ ...current, [selectedProduct]: true }))
+
+      try {
+        const response = await backendRequest(`/mouvements-stock-fifos/produit/${selectedProduct}`)
+        const movements = normalizeRows(response).map((movement) => ({
+          date: formatDate(movement.date_mouvement),
+          type: movement.type_mouvement,
+          quantity: safeNumber(movement.quantite),
+          balance: safeNumber(movement.quantite_restante_apres),
+        }))
+
+        if (!cancelled) {
+          setMovementByProduct((current) => ({ ...current, [selectedProduct]: movements }))
+        }
+      } catch {
+        if (!cancelled) {
+          setMovementByProduct((current) => ({ ...current, [selectedProduct]: [] }))
+        }
+      } finally {
+        if (!cancelled) {
+          setMovementLoadingByProduct((current) => ({ ...current, [selectedProduct]: false }))
+        }
+      }
+    }
+
+    loadMovements()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedProduct, movementByProduct, movementLoadingByProduct])
+
+  const categoryOptions = useMemo(() => {
+    const categories = new Set(stockData.map((product) => product.category).filter(Boolean))
+    return Array.from(categories)
+  }, [stockData])
+
+  const selectedMovements = selectedProduct ? movementByProduct[selectedProduct] ?? [] : []
+  const selectedMovementsLoading = selectedProduct ? Boolean(movementLoadingByProduct[selectedProduct]) : false
+
+  // Calculer les totaux
   const totals = useMemo(() => {
-    const filtered = stockData.filter((p) => {
+    const filtered = valuedStockData.filter((p) => {
       if (categoryFilter !== "all" && p.category !== categoryFilter) return false
       if (stockFilter === "low" && p.currentStock > p.minStock) return false
       if (stockFilter === "out" && p.currentStock > 0) return false
@@ -144,16 +440,16 @@ export default function StockReportsPage() {
     return {
       totalProducts: filtered.length,
       totalStock: filtered.reduce((sum, p) => sum + p.currentStock, 0),
-      totalCostValue: filtered.reduce((sum, p) => sum + p.totalValue, 0),
-      totalRetailValue: filtered.reduce((sum, p) => sum + p.retailValue, 0),
+      totalCostValue: filtered.reduce((sum, p) => sum + p.displayTotalValue, 0),
+      totalRetailValue: filtered.reduce((sum, p) => sum + p.displayRetailValue, 0),
       lowStockItems: filtered.filter((p) => p.currentStock <= p.minStock).length,
       outOfStockItems: filtered.filter((p) => p.currentStock === 0).length,
     }
-  }, [stockData, categoryFilter, stockFilter])
+  }, [valuedStockData, categoryFilter, stockFilter])
 
-  // Filter and sort
+  // Filtrer et trier
   const filteredData = useMemo(() => {
-    let result = [...stockData]
+    let result = [...valuedStockData]
 
     if (categoryFilter !== "all") {
       result = result.filter((p) => p.category === categoryFilter)
@@ -181,14 +477,24 @@ export default function StockReportsPage() {
     })
 
     return result
-  }, [stockData, categoryFilter, stockFilter, sortBy, sortOrder])
+  }, [valuedStockData, categoryFilter, stockFilter, sortBy, sortOrder])
+
+  const visibleMovements = useMemo(() => {
+    const rangeDays = Math.max(1, Number(dateRange) || 30)
+    const cutoff = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000)
+
+    return selectedMovements.filter((movement) => {
+      const movementDate = new Date(movement.date)
+      return Number.isFinite(movementDate.getTime()) && movementDate >= cutoff
+    })
+  }, [dateRange, selectedMovements])
 
   const getStockBadge = (product) => {
     if (product.currentStock === 0) {
-      return <Badge variant="destructive">Out of Stock</Badge>
+      return <Badge variant="destructive">Rupture</Badge>
     }
     if (product.currentStock <= product.minStock) {
-      return <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Low Stock</Badge>
+      return <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Stock Faible</Badge>
     }
     return <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">OK</Badge>
   }
@@ -197,26 +503,30 @@ export default function StockReportsPage() {
     window.print()
   }
 
+  const handleSelectProduct = (productId) => {
+    setSelectedProduct((current) => (current === productId ? null : productId))
+  }
+
   const handleExport = () => {
-    // Create CSV content
+    // Créer le contenu CSV
     let csvContent = "data:text/csv;charset=utf-8,"
     
     if (selectedReport === "sheet") {
-      csvContent += "SKU,Product,Category,Current Stock,Min Stock,Cost Price,Total Value,Status\n"
+      csvContent += `SKU,Produit,Catégorie,Stock Actuel,Stock Mini,Prix Revient (${selectedCurrencySymbol}),Valeur Totale (${selectedCurrencySymbol}),Statut\n`
       filteredData.forEach((p) => {
-        csvContent += `${p.sku},${p.name},${p.category},${p.currentStock},${p.minStock},${p.costPrice.toFixed(2)},${p.totalValue.toFixed(2)},${p.currentStock <= p.minStock ? "Low" : "OK"}\n`
+        csvContent += `${p.sku},${p.name},${p.category},${p.currentStock},${p.minStock},${p.displayCostPrice.toFixed(2)},${p.displayTotalValue.toFixed(2)},${p.currentStock <= p.minStock ? "Faible" : "OK"}\n`
       })
     } else if (selectedReport === "valuation") {
-      csvContent += "SKU,Product,Category,Quantity,Cost Price,Retail Price,Cost Value,Retail Value\n"
+      csvContent += `SKU,Produit,Catégorie,Quantité,Prix Revient (${selectedCurrencySymbol}),Prix Vente (${selectedCurrencySymbol}),Valeur Revient (${selectedCurrencySymbol}),Valeur Vente (${selectedCurrencySymbol})\n`
       filteredData.forEach((p) => {
-        csvContent += `${p.sku},${p.name},${p.category},${p.currentStock},${p.costPrice.toFixed(2)},${p.price.toFixed(2)},${p.totalValue.toFixed(2)},${p.retailValue.toFixed(2)}\n`
+        csvContent += `${p.sku},${p.name},${p.category},${p.currentStock},${p.displayCostPrice.toFixed(2)},${p.displayPrice.toFixed(2)},${p.displayTotalValue.toFixed(2)},${p.displayRetailValue.toFixed(2)}\n`
       })
     }
 
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement("a")
     link.setAttribute("href", encodedUri)
-    link.setAttribute("download", `stock_report_${selectedReport}_${new Date().toISOString().split("T")[0]}.csv`)
+    link.setAttribute("download", `rapport_stock_${selectedReport}_${new Date().toISOString().split("T")[0]}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -226,31 +536,55 @@ export default function StockReportsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Stock Reports</h1>
+          <h1 className="text-3xl font-bold text-foreground">Rapports de Stock</h1>
           <p className="text-muted-foreground">
-            Comprehensive stock sheets and inventory reports
+            Fiches de stock complètes et rapports d'inventaire
           </p>
         </div>
         <div className="flex gap-2 print:hidden">
           <Button variant="outline" onClick={handlePrint}>
             <Printer className="h-4 w-4 mr-2" />
-            Print
+            Imprimer
           </Button>
           <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
-            Export CSV
+            Exporter CSV
           </Button>
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {loading && (
+        <Card>
+          <CardContent className="p-6 text-sm text-muted-foreground">
+            Chargement des stocks depuis le backend...
+          </CardContent>
+        </Card>
+      )}
+
+      {error && (
+        <Card className="border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-800 print:hidden">
+          <CardContent className="p-6 text-sm text-red-700 dark:text-red-300">
+            {error}
+          </CardContent>
+        </Card>
+      )}
+
+      {missingRateCount > 0 && (
+        <Card className="border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 print:hidden">
+          <CardContent className="p-6 text-sm text-amber-800 dark:text-amber-200">
+            {missingRateCount} produit(s) n'ont pas encore de taux actif vers {selectedCurrencySymbol}. Les montants concernés restent affichés dans leur devise source.
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cartes de résumé */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               <div>
-                <p className="text-xs text-muted-foreground">Products</p>
+                <p className="text-xs text-muted-foreground">Produits</p>
                 <p className="text-xl font-bold text-foreground">{totals.totalProducts}</p>
               </div>
             </div>
@@ -262,7 +596,7 @@ export default function StockReportsPage() {
             <div className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               <div>
-                <p className="text-xs text-muted-foreground">Total Stock</p>
+                <p className="text-xs text-muted-foreground">Stock Total</p>
                 <p className="text-xl font-bold text-foreground">{totals.totalStock}</p>
               </div>
             </div>
@@ -274,8 +608,8 @@ export default function StockReportsPage() {
             <div className="flex items-center gap-2">
               <DollarSign className="h-5 w-5 text-purple-600 dark:text-purple-400" />
               <div>
-                <p className="text-xs text-muted-foreground">Cost Value</p>
-                <p className="text-xl font-bold text-foreground">${totals.totalCostValue.toFixed(0)}</p>
+                <p className="text-xs text-muted-foreground">Valeur Revient ({selectedCurrencySymbol})</p>
+                <p className="text-xl font-bold text-foreground">{selectedCurrencySymbol} {totals.totalCostValue.toFixed(0)}</p>
               </div>
             </div>
           </CardContent>
@@ -286,8 +620,8 @@ export default function StockReportsPage() {
             <div className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
               <div>
-                <p className="text-xs text-muted-foreground">Retail Value</p>
-                <p className="text-xl font-bold text-foreground">${totals.totalRetailValue.toFixed(0)}</p>
+                <p className="text-xs text-muted-foreground">Valeur Vente ({selectedCurrencySymbol})</p>
+                <p className="text-xl font-bold text-foreground">{selectedCurrencySymbol} {totals.totalRetailValue.toFixed(0)}</p>
               </div>
             </div>
           </CardContent>
@@ -298,7 +632,7 @@ export default function StockReportsPage() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
               <div>
-                <p className="text-xs text-muted-foreground">Low Stock</p>
+                <p className="text-xs text-muted-foreground">Stock Faible</p>
                 <p className="text-xl font-bold text-foreground">{totals.lowStockItems}</p>
               </div>
             </div>
@@ -310,7 +644,7 @@ export default function StockReportsPage() {
             <div className="flex items-center gap-2">
               <TrendingDown className="h-5 w-5 text-red-600 dark:text-red-400" />
               <div>
-                <p className="text-xs text-muted-foreground">Out of Stock</p>
+                <p className="text-xs text-muted-foreground">Rupture</p>
                 <p className="text-xl font-bold text-foreground">{totals.outOfStockItems}</p>
               </div>
             </div>
@@ -318,67 +652,85 @@ export default function StockReportsPage() {
         </Card>
       </div>
 
-      {/* Report Tabs */}
+      {/* Onglets des rapports */}
       <Tabs value={selectedReport} onValueChange={setSelectedReport} className="space-y-4">
         <TabsList className="print:hidden">
           <TabsTrigger value="sheet">
             <FileSpreadsheet className="h-4 w-4 mr-2" />
-            Stock Sheet
+            Fiche de Stock
           </TabsTrigger>
           <TabsTrigger value="movements">
             <History className="h-4 w-4 mr-2" />
-            Stock Movements
+            Mouvements
           </TabsTrigger>
           <TabsTrigger value="lowstock">
             <AlertTriangle className="h-4 w-4 mr-2" />
-            Low Stock Alerts
+            Alertes Stock Faible
           </TabsTrigger>
           <TabsTrigger value="valuation">
             <DollarSign className="h-4 w-4 mr-2" />
-            Stock Valuation
+            Évaluation Stock
           </TabsTrigger>
           <TabsTrigger value="restock-history">
             <FileText className="h-4 w-4 mr-2" />
-            Restock History
+            Historique Réappro
           </TabsTrigger>
         </TabsList>
 
-        {/* Filters - shared across tabs */}
+        {/* Filtres - partagés entre les onglets */}
         <Card className="print:hidden">
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4">
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                 <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Category" />
+                  <SelectValue placeholder="Catégorie" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  <SelectItem value="food">Food</SelectItem>
-                  <SelectItem value="drinks">Drinks</SelectItem>
-                  <SelectItem value="desserts">Desserts</SelectItem>
+                  <SelectItem value="all">Toutes Catégories</SelectItem>
+                  {categoryOptions.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 
               <Select value={stockFilter} onValueChange={setStockFilter}>
                 <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Stock Level" />
+                  <SelectValue placeholder="Niveau Stock" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Stock</SelectItem>
-                  <SelectItem value="low">Low Stock</SelectItem>
-                  <SelectItem value="out">Out of Stock</SelectItem>
-                  <SelectItem value="ok">In Stock</SelectItem>
+                  <SelectItem value="all">Tout Stock</SelectItem>
+                  <SelectItem value="low">Stock Faible</SelectItem>
+                  <SelectItem value="out">Rupture</SelectItem>
+                  <SelectItem value="ok">En Stock</SelectItem>
                 </SelectContent>
               </Select>
 
               <Select value={dateRange} onValueChange={setDateRange}>
                 <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Date Range" />
+                  <SelectValue placeholder="Période" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="7">Last 7 Days</SelectItem>
-                  <SelectItem value="30">Last 30 Days</SelectItem>
-                  <SelectItem value="90">Last 90 Days</SelectItem>
+                  <SelectItem value="7">7 Derniers Jours</SelectItem>
+                  <SelectItem value="30">30 Derniers Jours</SelectItem>
+                  <SelectItem value="90">90 Derniers Jours</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={selectedCurrencyId ? String(selectedCurrencyId) : ""}
+                onValueChange={(value) => setSelectedCurrencyId(Number(value))}
+              >
+                <SelectTrigger className="w-44">
+                  <SelectValue placeholder="Devise" />
+                </SelectTrigger>
+                <SelectContent>
+                  {currencyOptions.map((currency) => (
+                    <SelectItem key={currency.id} value={String(currency.id)}>
+                      {currency.code || currency.symbole || currency.nom}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 
@@ -393,13 +745,13 @@ export default function StockReportsPage() {
           </CardContent>
         </Card>
 
-        {/* Stock Sheet Report */}
+        {/* Rapport Fiche de Stock */}
         <TabsContent value="sheet">
           <Card>
             <CardHeader>
-              <CardTitle>Stock Sheet</CardTitle>
+              <CardTitle>Fiche de Stock</CardTitle>
               <CardDescription>
-                Complete inventory list with current stock levels
+                Liste complète des stocks avec niveaux actuels
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -408,15 +760,15 @@ export default function StockReportsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>SKU</TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-center">Current Stock</TableHead>
-                      <TableHead className="text-center">Min Stock</TableHead>
-                      <TableHead className="text-center">Max Stock</TableHead>
-                      <TableHead className="text-right">Cost Price</TableHead>
-                      <TableHead className="text-right">Total Value</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Last Restock</TableHead>
+                      <TableHead>Produit</TableHead>
+                      <TableHead>Catégorie</TableHead>
+                      <TableHead className="text-center">Stock Actuel</TableHead>
+                      <TableHead className="text-center">Stock Mini</TableHead>
+                      <TableHead className="text-center">Stock Maxi</TableHead>
+                      <TableHead className="text-right">Prix Revient ({selectedCurrencySymbol})</TableHead>
+                      <TableHead className="text-right">Valeur Totale ({selectedCurrencySymbol})</TableHead>
+                      <TableHead>Statut</TableHead>
+                      <TableHead>Dernier Réappro</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -436,8 +788,8 @@ export default function StockReportsPage() {
                         </TableCell>
                         <TableCell className="text-center">{product.minStock}</TableCell>
                         <TableCell className="text-center">{product.maxStock}</TableCell>
-                        <TableCell className="text-right">${product.costPrice.toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-medium">${product.totalValue.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">{selectedCurrencySymbol} {product.displayCostPrice.toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-medium">{selectedCurrencySymbol} {product.displayTotalValue.toFixed(2)}</TableCell>
                         <TableCell>{getStockBadge(product)}</TableCell>
                         <TableCell>{product.lastRestock}</TableCell>
                       </TableRow>
@@ -446,18 +798,18 @@ export default function StockReportsPage() {
                 </Table>
               </div>
 
-              {/* Totals Row */}
+              {/* Ligne des totaux */}
               <div className="mt-4 p-4 bg-muted/50 rounded-lg">
                 <div className="flex justify-between items-center">
-                  <span className="font-semibold text-foreground">Totals:</span>
+                  <span className="font-semibold text-foreground">Totaux :</span>
                   <div className="flex gap-8">
                     <div>
-                      <span className="text-muted-foreground">Total Items: </span>
+                      <span className="text-muted-foreground">Total Articles : </span>
                       <span className="font-bold text-foreground">{totals.totalStock}</span>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Total Value: </span>
-                      <span className="font-bold text-foreground">${totals.totalCostValue.toFixed(2)}</span>
+                      <span className="text-muted-foreground">Valeur Totale ({selectedCurrencySymbol}) : </span>
+                      <span className="font-bold text-foreground">{selectedCurrencySymbol} {totals.totalCostValue.toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -466,12 +818,12 @@ export default function StockReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* Stock Movements Report */}
+        {/* Rapport Mouvements de Stock */}
         <TabsContent value="movements">
           <Card>
             <CardHeader>
-              <CardTitle>Stock Movements</CardTitle>
-              <CardDescription>Track all inventory ins and outs</CardDescription>
+              <CardTitle>Mouvements de Stock</CardTitle>
+              <CardDescription>Suivi des entrées et sorties d'inventaire</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -479,11 +831,7 @@ export default function StockReportsPage() {
                   <div key={product.id} className="border rounded-lg p-4">
                     <div
                       className="flex items-center justify-between cursor-pointer"
-                      onClick={() =>
-                        setSelectedProduct(
-                          selectedProduct === product.id ? null : product.id
-                        )
-                      }
+                      onClick={() => handleSelectProduct(product.id)}
                     >
                       <div className="flex items-center gap-3">
                         <img
@@ -498,13 +846,13 @@ export default function StockReportsPage() {
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="text-right">
-                          <p className="text-sm text-muted-foreground">Last {dateRange} Days</p>
+                          <p className="text-sm text-muted-foreground">Mouvements récents</p>
                           <div className="flex gap-2">
                             <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                              -{product.salesLast30Days} sales
+                              -{product.salesLast30Days} sorties
                             </Badge>
                             <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                              +{product.restocksLast30Days} restocks
+                              +{product.restocksLast30Days} lots
                             </Badge>
                           </div>
                         </div>
@@ -514,32 +862,41 @@ export default function StockReportsPage() {
 
                     {selectedProduct === product.id && (
                       <div className="mt-4 border-t pt-4">
+                        {selectedMovementsLoading ? (
+                          <div className="py-4 text-sm text-muted-foreground">
+                            Chargement des mouvements...
+                          </div>
+                        ) : (
                         <Table>
                           <TableHeader>
                             <TableRow>
                               <TableHead>Date</TableHead>
                               <TableHead>Type</TableHead>
-                              <TableHead className="text-right">Quantity</TableHead>
-                              <TableHead className="text-right">Balance</TableHead>
+                              <TableHead className="text-right">Quantité</TableHead>
+                              <TableHead className="text-right">Solde</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {product.movements.slice(0, 5).map((movement, idx) => (
+                            {visibleMovements.slice(0, 5).map((movement, idx) => (
                               <TableRow key={idx}>
                                 <TableCell>{movement.date}</TableCell>
                                 <TableCell>
                                   <Badge
                                     className={
-                                      movement.type === "sale"
+                                      movement.type === "sortie"
                                         ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                                         : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                                     }
                                   >
-                                    {movement.type}
+                                    {movement.type === "sortie"
+                                      ? "Sortie"
+                                      : movement.type === "retour"
+                                        ? "Retour"
+                                        : "Entrée"}
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  {movement.type === "sale" ? "-" : "+"}
+                                  {movement.type === "sortie" ? "-" : "+"}
                                   {movement.quantity}
                                 </TableCell>
                                 <TableCell className="text-right">{movement.balance}</TableCell>
@@ -547,6 +904,7 @@ export default function StockReportsPage() {
                             ))}
                           </TableBody>
                         </Table>
+                        )}
                       </div>
                     )}
                   </div>
@@ -556,19 +914,19 @@ export default function StockReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* Low Stock Alerts */}
+        {/* Alertes Stock Faible */}
         <TabsContent value="lowstock">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-amber-500" />
-                Low Stock Alerts
+                Alertes Stock Faible
               </CardTitle>
-              <CardDescription>Products that need restocking attention</CardDescription>
+              <CardDescription>Produits nécessitant un réapprovisionnement</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {stockData
+                {filteredData
                   .filter((p) => p.currentStock <= p.minStock)
                   .sort((a, b) => a.currentStock - b.currentStock)
                   .map((product) => (
@@ -601,11 +959,11 @@ export default function StockReportsPage() {
                             {product.currentStock}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            of {product.minStock} min
+                            sur {product.minStock} min
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm text-muted-foreground">Suggested Order</p>
+                          <p className="text-sm text-muted-foreground">Commande Suggérée</p>
                           <p className="text-lg font-bold text-foreground">
                             {product.maxStock - product.currentStock}
                           </p>
@@ -614,9 +972,9 @@ export default function StockReportsPage() {
                     </div>
                   ))}
 
-                {stockData.filter((p) => p.currentStock <= p.minStock).length === 0 && (
+                {filteredData.filter((p) => p.currentStock <= p.minStock).length === 0 && (
                   <div className="text-center py-8 text-muted-foreground">
-                    No low stock alerts. All products are well stocked.
+                    Aucune alerte stock faible. Tous les produits sont bien approvisionnés.
                   </div>
                 )}
               </div>
@@ -624,12 +982,12 @@ export default function StockReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* Stock Valuation Report */}
+        {/* Rapport Évaluation des Stocks */}
         <TabsContent value="valuation">
           <Card>
             <CardHeader>
-              <CardTitle>Stock Valuation Report</CardTitle>
-              <CardDescription>Financial value of current inventory</CardDescription>
+              <CardTitle>Évaluation des Stocks</CardTitle>
+              <CardDescription>Valeur financière de l'inventaire actuel</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -637,29 +995,29 @@ export default function StockReportsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>SKU</TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-center">Quantity</TableHead>
-                      <TableHead className="text-right">Cost Price</TableHead>
-                      <TableHead className="text-right">Retail Price</TableHead>
-                      <TableHead className="text-right">Cost Value</TableHead>
-                      <TableHead className="text-right">Retail Value</TableHead>
-                      <TableHead className="text-right">Margin</TableHead>
+                      <TableHead>Produit</TableHead>
+                      <TableHead>Catégorie</TableHead>
+                      <TableHead className="text-center">Quantité</TableHead>
+                      <TableHead className="text-right">Prix Revient ({selectedCurrencySymbol})</TableHead>
+                      <TableHead className="text-right">Prix Vente ({selectedCurrencySymbol})</TableHead>
+                      <TableHead className="text-right">Valeur Revient ({selectedCurrencySymbol})</TableHead>
+                      <TableHead className="text-right">Valeur Vente ({selectedCurrencySymbol})</TableHead>
+                      <TableHead className="text-right">Marge</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredData.map((product) => {
-                      const margin = ((product.price - product.costPrice) / product.price) * 100
+                      const margin = ((product.displayPrice - product.displayCostPrice) / product.displayPrice) * 100
                       return (
                         <TableRow key={product.id}>
                           <TableCell className="font-mono text-sm">{product.sku}</TableCell>
                           <TableCell className="font-medium text-foreground">{product.name}</TableCell>
                           <TableCell className="capitalize">{product.category}</TableCell>
                           <TableCell className="text-center">{product.currentStock}</TableCell>
-                          <TableCell className="text-right">${product.costPrice.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">${product.price.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">${product.totalValue.toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-medium">${product.retailValue.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">{selectedCurrencySymbol} {product.displayCostPrice.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">{selectedCurrencySymbol} {product.displayPrice.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">{selectedCurrencySymbol} {product.displayTotalValue.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-medium">{selectedCurrencySymbol} {product.displayRetailValue.toFixed(2)}</TableCell>
                           <TableCell className="text-right">
                             <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
                               {margin.toFixed(1)}%
@@ -672,30 +1030,30 @@ export default function StockReportsPage() {
                 </Table>
               </div>
 
-              {/* Valuation Summary */}
+              {/* Résumé de l'évaluation */}
               <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card>
                   <CardContent className="p-4">
-                    <p className="text-sm text-muted-foreground">Total Cost Value</p>
+                      <p className="text-sm text-muted-foreground">Valeur Totale Revient ({selectedCurrencySymbol})</p>
                     <p className="text-2xl font-bold text-foreground">
-                      ${totals.totalCostValue.toFixed(2)}
+                        {selectedCurrencySymbol} {totals.totalCostValue.toFixed(2)}
                     </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-4">
-                    <p className="text-sm text-muted-foreground">Total Retail Value</p>
+                      <p className="text-sm text-muted-foreground">Valeur Totale Vente ({selectedCurrencySymbol})</p>
                     <p className="text-2xl font-bold text-foreground">
-                      ${totals.totalRetailValue.toFixed(2)}
+                        {selectedCurrencySymbol} {totals.totalRetailValue.toFixed(2)}
                     </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-4">
-                    <p className="text-sm text-muted-foreground">Potential Profit</p>
-                    <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                      ${(totals.totalRetailValue - totals.totalCostValue).toFixed(2)}
-                    </p>
+                    <p className="text-sm text-muted-foreground">Profit Potentiel</p>
+                      <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                        {selectedCurrencySymbol} {(totals.totalRetailValue - totals.totalCostValue).toFixed(2)}
+                      </p>
                   </CardContent>
                 </Card>
               </div>
@@ -703,33 +1061,33 @@ export default function StockReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* Restock History Report */}
+        {/* Historique des Réapprovisionnements */}
         <TabsContent value="restock-history">
           <Card>
             <CardHeader>
-              <CardTitle>Restock History</CardTitle>
-              <CardDescription>Record of all restocking activities</CardDescription>
+              <CardTitle>Historique des Réapprovisionnements</CardTitle>
+              <CardDescription>Enregistrement de toutes les activités de réapprovisionnement</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {RESTOCK_HISTORY.map((entry) => (
+                {valuedRestockHistory.map((entry) => (
                   <div key={entry.id} className="border rounded-lg p-4">
                     <div className="flex items-start justify-between mb-3">
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="font-semibold text-foreground">Order #{entry.id}</p>
+                          <p className="font-semibold text-foreground">Commande #{entry.id}</p>
                           <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
                             {entry.status}
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">
                           <Calendar className="inline h-3 w-3 mr-1" />
-                          {entry.date} | {entry.supplier} | Processed by: {entry.processedBy}
+                          {entry.date} | {entry.supplier} | Traité par : {entry.processedBy}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Total Cost</p>
-                        <p className="text-xl font-bold text-foreground">${entry.totalCost.toFixed(2)}</p>
+                        <p className="text-sm text-muted-foreground">Coût Total ({selectedCurrencySymbol})</p>
+                        <p className="text-xl font-bold text-foreground">{selectedCurrencySymbol} {entry.displayTotalCost.toFixed(2)}</p>
                       </div>
                     </div>
 
@@ -737,9 +1095,9 @@ export default function StockReportsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>SKU</TableHead>
-                          <TableHead>Product</TableHead>
-                          <TableHead className="text-right">Quantity</TableHead>
-                          <TableHead className="text-right">Unit Cost</TableHead>
+                          <TableHead>Produit</TableHead>
+                          <TableHead className="text-right">Quantité</TableHead>
+                          <TableHead className="text-right">Prix Unitaire</TableHead>
                           <TableHead className="text-right">Total</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -749,9 +1107,9 @@ export default function StockReportsPage() {
                             <TableCell className="font-mono text-sm">{product.sku}</TableCell>
                             <TableCell>{product.name}</TableCell>
                             <TableCell className="text-right">{product.quantity}</TableCell>
-                            <TableCell className="text-right">${product.cost.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">{selectedCurrencySymbol} {product.displayCost.toFixed(2)}</TableCell>
                             <TableCell className="text-right font-medium">
-                              ${(product.quantity * product.cost).toFixed(2)}
+                              {selectedCurrencySymbol} {(product.quantity * product.displayCost).toFixed(2)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -765,10 +1123,10 @@ export default function StockReportsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Print Header - only visible when printing */}
+      {/* En-tête d'impression - visible uniquement lors de l'impression */}
       <div className="hidden print:block mb-8">
-        <h1 className="text-2xl font-bold">Stock Report</h1>
-        <p className="text-sm">Generated: {new Date().toLocaleString()}</p>
+        <h1 className="text-2xl font-bold">Rapport de Stock</h1>
+        <p className="text-sm">Généré : {new Date().toLocaleString()}</p>
       </div>
     </div>
   )

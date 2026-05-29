@@ -28,28 +28,28 @@ const predefinedDiscounts: Discount[] = [
     id: "senior",
     type: "percentage",
     value: 10,
-    description: "Senior Citizen Discount (10%)",
+    description: "Remise senior (10%)",
     minAmount: 0,
   },
   {
     id: "student",
     type: "percentage",
     value: 15,
-    description: "Student Discount (15%)",
+    description: "Remise étudiant (15%)",
     minAmount: 0,
   },
   {
     id: "loyalty",
     type: "fixed",
     value: 5,
-    description: "Loyalty Member ($5 off)",
+    description: "Remise fidélité (5 $ de réduction)",
     minAmount: 25,
   },
   {
     id: "bulk",
     type: "percentage",
     value: 20,
-    description: "Bulk Order (20% off $100+)",
+    description: "Commande en volume (20 % de réduction dès 100 $)",
     minAmount: 100,
   },
 ]
@@ -64,7 +64,7 @@ export default function DiscountModal({ isOpen, onClose }: DiscountModalProps) {
 
   const handleApplyPredefined = (discount: Discount) => {
     if (discount.minAmount && cartTotal < discount.minAmount) {
-      alert(`Minimum order amount of $${discount.minAmount} required for this discount`)
+      alert(`Un montant minimum de $${discount.minAmount} est requis pour cette remise.`)
       return
     }
     applyDiscount(discount)
@@ -73,7 +73,7 @@ export default function DiscountModal({ isOpen, onClose }: DiscountModalProps) {
 
   const handleApplyCustom = () => {
     if (customDiscount.value <= 0 || !customDiscount.description) {
-      alert("Please enter valid discount details")
+      alert("Veuillez saisir des informations de remise valides.")
       return
     }
 
@@ -97,7 +97,7 @@ export default function DiscountModal({ isOpen, onClose }: DiscountModalProps) {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Apply Discount</DialogTitle>
+          <DialogTitle>Appliquer une remise</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -106,11 +106,11 @@ export default function DiscountModal({ isOpen, onClose }: DiscountModalProps) {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-green-800">Current Discount</p>
+                    <p className="font-medium text-green-800">Remise actuelle</p>
                     <p className="text-sm text-green-600">{appliedDiscount.description}</p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={handleRemoveDiscount}>
-                    Remove
+                    <Button variant="outline" size="sm" onClick={handleRemoveDiscount}>
+                    Supprimer
                   </Button>
                 </div>
               </CardContent>
@@ -118,7 +118,7 @@ export default function DiscountModal({ isOpen, onClose }: DiscountModalProps) {
           )}
 
           <div>
-            <h3 className="font-medium mb-3">Predefined Discounts</h3>
+            <h3 className="font-medium mb-3">Remises prédéfinies</h3>
             <div className="space-y-2">
               {predefinedDiscounts.map((discount) => {
                 const isEligible = !discount.minAmount || cartTotal >= discount.minAmount
@@ -139,11 +139,11 @@ export default function DiscountModal({ isOpen, onClose }: DiscountModalProps) {
                           <div>
                             <p className="font-medium text-sm">{discount.description}</p>
                             {discount.minAmount && (
-                              <p className="text-xs text-muted-foreground">Min. order: ${discount.minAmount}</p>
+                              <p className="text-xs text-muted-foreground">Commande min. : ${discount.minAmount}</p>
                             )}
                           </div>
                         </div>
-                        {!isEligible && <span className="text-xs text-red-500">Not eligible</span>}
+                        {!isEligible && <span className="text-xs text-red-500">Non éligible</span>}
                       </div>
                     </CardContent>
                   </Card>
@@ -153,10 +153,10 @@ export default function DiscountModal({ isOpen, onClose }: DiscountModalProps) {
           </div>
 
           <div>
-            <h3 className="font-medium mb-3">Custom Discount</h3>
+            <h3 className="font-medium mb-3">Remise personnalisée</h3>
             <div className="space-y-3">
               <div>
-                <Label>Discount Type</Label>
+                <Label>Type de remise</Label>
                 <RadioGroup
                   value={customDiscount.type}
                   onValueChange={(value: "percentage" | "fixed") =>
@@ -166,20 +166,20 @@ export default function DiscountModal({ isOpen, onClose }: DiscountModalProps) {
                 >
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="percentage" id="percentage" />
-                    <Label htmlFor="percentage">Percentage</Label>
+                    <Label htmlFor="percentage">Pourcentage</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="fixed" id="fixed" />
-                    <Label htmlFor="fixed">Fixed Amount</Label>
+                    <Label htmlFor="fixed">Montant fixe</Label>
                   </div>
                 </RadioGroup>
               </div>
 
               <div>
-                <Label>Value</Label>
+                <Label>Valeur</Label>
                 <Input
                   type="number"
-                  placeholder={customDiscount.type === "percentage" ? "Enter %" : "Enter $"}
+                  placeholder={customDiscount.type === "percentage" ? "Saisir %" : "Saisir $"}
                   value={customDiscount.value || ""}
                   onChange={(e) =>
                     setCustomDiscount({
@@ -193,7 +193,7 @@ export default function DiscountModal({ isOpen, onClose }: DiscountModalProps) {
               <div>
                 <Label>Description</Label>
                 <Input
-                  placeholder="Enter discount description"
+                  placeholder="Saisir la description de la remise"
                   value={customDiscount.description}
                   onChange={(e) =>
                     setCustomDiscount({
@@ -205,7 +205,7 @@ export default function DiscountModal({ isOpen, onClose }: DiscountModalProps) {
               </div>
 
               <Button onClick={handleApplyCustom} className="w-full">
-                Apply Custom Discount
+                Appliquer la remise personnalisée
               </Button>
             </div>
           </div>

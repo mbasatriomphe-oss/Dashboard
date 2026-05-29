@@ -1,10 +1,14 @@
 import type { Product } from "../context/cart-context"
+import { backendRequest } from "./backend"
 
 export interface Customer {
   id: string
   name: string
   email: string
   phone: string
+  address?: string
+  city?: string
+  country?: string
   loyaltyPoints: number
   totalSpent: number
   createdAt: Date
@@ -52,43 +56,96 @@ export interface SalesReport {
   }>
 }
 
+interface BackendClient {
+  id: number
+  nom: string
+  post_nom: string
+  prenom: string
+  adresse: string
+  ville: string
+  pays: string
+  contact: string
+  created_at?: string
+  updated_at?: string
+}
+
+interface BackendListResponse<T> {
+  status?: string
+  data?: T
+  message?: string
+}
+
 class DatabaseService {
   private getStorageKey(key: string): string {
     return `pos_${key}`
   }
 
+  private mapBackendClient(client: BackendClient): Customer {
+    const fullName = [client.nom, client.post_nom, client.prenom].filter(Boolean).join(" ").trim()
+
+    return {
+      id: String(client.id),
+      name: fullName || client.nom,
+      email: client.contact,
+      phone: client.contact,
+      loyaltyPoints: 0,
+      totalSpent: 0,
+      createdAt: client.created_at ? new Date(client.created_at) : new Date(),
+      lastVisit: client.updated_at ? new Date(client.updated_at) : new Date(),
+    }
+  }
+
+  private toBackendClientPayload(customer: Customer) {
+    const [firstWord, ...rest] = customer.name.trim().split(/\s+/)
+    const primaryName = firstWord || customer.name || "Client"
+    const secondaryName = rest.length > 0 ? rest.join(" ") : "N/A"
+
+    return {
+      nom: primaryName,
+      post_nom: secondaryName,
+      prenom: rest.length > 1 ? rest[rest.length - 1] : primaryName,
+      adresse: customer.address?.trim() || "N/A",
+      ville: customer.city?.trim() || "N/A",
+      pays: customer.country?.trim() || "N/A",
+      contact: customer.phone || customer.email,
+      iduser: null,
+    }
+  }
+
   // Customer Management
   async getCustomers(): Promise<Customer[]> {
-    const customers = localStorage.getItem(this.getStorageKey("customers"))
-    return customers ? JSON.parse(customers) : []
+    const response = await backendRequest<BackendListResponse<BackendClient[]>>("/clients?per_page=all")
+    return (response.data ?? []).map((client) => this.mapBackendClient(client))
   }
 
   async getCustomer(id: string): Promise<Customer | null> {
-    const customers = await this.getCustomers()
-    return customers.find((c) => c.id === id) || null
+    const response = await backendRequest<{ status?: string; data?: BackendClient }>(`/clients/${id}`)
+    return response.data ? this.mapBackendClient(response.data) : null
   }
 
-  async saveCustomer(customer: Customer): Promise<void> {
-    const customers = await this.getCustomers()
-    const existingIndex = customers.findIndex((c) => c.id === customer.id)
+  async saveCustomer(customer: Customer): Promise<Customer> {
+    let response: { status?: string; data?: BackendClient }
 
-    if (existingIndex >= 0) {
-      customers[existingIndex] = customer
+    if (customer.id && !Number.isNaN(Number(customer.id))) {
+      response = await backendRequest<{ status?: string; data?: BackendClient }>(`/clients/${customer.id}`, {
+        method: "PUT",
+        body: JSON.stringify(this.toBackendClientPayload(customer)),
+      })
     } else {
-      customers.push(customer)
+      response = await backendRequest<{ status?: string; data?: BackendClient }>("/clients", {
+        method: "POST",
+        body: JSON.stringify(this.toBackendClientPayload(customer)),
+      })
     }
 
-    localStorage.setItem(this.getStorageKey("customers"), JSON.stringify(customers))
+    return response.data ? this.mapBackendClient(response.data) : customer
   }
 
   async searchCustomers(query: string): Promise<Customer[]> {
-    const customers = await this.getCustomers()
-    return customers.filter(
-      (c) =>
-        c.name.toLowerCase().includes(query.toLowerCase()) ||
-        c.email.toLowerCase().includes(query.toLowerCase()) ||
-        c.phone.includes(query),
+    const response = await backendRequest<BackendListResponse<BackendClient[]>>(
+      `/clients?per_page=all&search=${encodeURIComponent(query)}`,
     )
+    return (response.data ?? []).map((client) => this.mapBackendClient(client))
   }
 
   // Transaction Management

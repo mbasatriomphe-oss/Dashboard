@@ -16,15 +16,15 @@ export default function AccessDeniedPage() {
             <ShieldX className="w-8 h-8 text-red-500" />
           </div>
           <CardTitle className="text-2xl font-bold text-white">
-            Access Denied
+            Accès refusé
           </CardTitle>
           <CardDescription className="text-slate-400">
-            You do not have permission to access this area
+            Vous n'avez pas l'autorisation d'accéder à cette zone.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-center text-slate-300 text-sm">
-            This section is restricted to administrators only. If you believe this is an error, please contact your system administrator.
+            Cette section est réservée aux administrateurs. Si vous pensez qu'il s'agit d'une erreur, contactez votre administrateur système.
           </p>
 
           <div className="flex flex-col gap-3">
@@ -33,7 +33,7 @@ export default function AccessDeniedPage() {
               className="w-full h-12 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-medium"
             >
               <Home className="w-4 h-4 mr-2" />
-              Go to POS Dashboard
+              Aller au tableau de bord POS
             </Button>
             <Button
               onClick={() => router.back()}
@@ -41,7 +41,7 @@ export default function AccessDeniedPage() {
               className="w-full h-12 bg-white/5 border-white/10 text-white hover:bg-white/10"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Go Back
+              Retourner
             </Button>
           </div>
         </CardContent>

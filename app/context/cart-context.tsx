@@ -8,6 +8,9 @@ export interface Product {
   price: number
   image: string
   category: string
+  categoryLabel?: string
+  currencySymbol?: string
+  stock?: number
 }
 
 interface Discount {
@@ -47,7 +50,7 @@ interface CartItem extends Product {
 
 interface CartContextType {
   cart: CartItem[]
-  addToCart: (product: Product) => void
+  addToCart: (product: Product) => boolean
   removeFromCart: (productId: number) => void
   updateQuantity: (productId: number, quantity: number) => void
   clearCart: () => void
@@ -86,15 +89,30 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [cart])
 
   const addToCart = (product: Product) => {
+    let added = false
+
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === product.id)
+      const stockLimit = Number(product.stock)
+
+      if (Number.isFinite(stockLimit) && stockLimit <= 0) {
+        return prevCart
+      }
+
+      if (existingItem && Number.isFinite(stockLimit) && existingItem.quantity >= stockLimit) {
+        return prevCart
+      }
 
       if (existingItem) {
+        added = true
         return prevCart.map((item) => (item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item))
       }
 
+      added = true
       return [...prevCart, { ...product, quantity: 1 }]
     })
+
+    return added
   }
 
   const removeFromCart = (productId: number) => {

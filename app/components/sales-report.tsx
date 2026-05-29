@@ -33,7 +33,7 @@ export default function SalesReportComponent() {
   if (!report) {
     return (
       <div className="space-y-4">
-        <div className="flex gap-4 items-end">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div>
             <Label htmlFor="start-date">Start Date</Label>
             <Input id="start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -52,7 +52,7 @@ export default function SalesReportComponent() {
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-4 items-end">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
         <div>
           <Label htmlFor="start-date">Start Date</Label>
           <Input id="start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -68,7 +68,7 @@ export default function SalesReportComponent() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-col items-start justify-between gap-2 space-y-0 pb-2 sm:flex-row sm:items-center">
             <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -78,7 +78,7 @@ export default function SalesReportComponent() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-col items-start justify-between gap-2 space-y-0 pb-2 sm:flex-row sm:items-center">
             <CardTitle className="text-sm font-medium">Transactions</CardTitle>
             <ShoppingCart className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -88,8 +88,8 @@ export default function SalesReportComponent() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Average Transaction</CardTitle>
+          <CardHeader className="flex flex-col items-start justify-between gap-2 space-y-0 pb-2 sm:flex-row sm:items-center">
+            <CardTitle className="text-sm font-medium">Transaction moyenne</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -98,8 +98,8 @@ export default function SalesReportComponent() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Top Products</CardTitle>
+          <CardHeader className="flex flex-col items-start justify-between gap-2 space-y-0 pb-2 sm:flex-row sm:items-center">
+            <CardTitle className="text-sm font-medium">Produits principaux</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -110,7 +110,7 @@ export default function SalesReportComponent() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Top Selling Products</CardTitle>
+          <CardTitle>Produits les plus vendus</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -124,7 +124,7 @@ export default function SalesReportComponent() {
                 </div>
                 <div className="text-right">
                   <p className="font-medium">${product.revenue.toFixed(2)}</p>
-                  <p className="text-sm text-muted-foreground">{product.quantity} sold</p>
+                  <p className="text-sm text-muted-foreground">{product.quantity} vendus</p>
                 </div>
               </div>
             ))}
