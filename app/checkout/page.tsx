@@ -53,11 +53,13 @@ type PricingLine = {
   sourceCurrencyCode: string
   sourceCurrencySymbol: string
   sourceUnitPrice: number
+  purchaseUnitPrice: number | null
   proposedUnitPrice: number
   finalUnitPrice: number
   rate: number | null
   lineTotal: number
   needsRate: boolean
+  isBelowPurchasePrice: boolean
 }
 
 type CheckoutError = {
@@ -113,6 +115,10 @@ export default function CheckoutPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [francAmount, setFrancAmount] = useState("")
   const [dollarAmount, setDollarAmount] = useState("")
+  const [singleAmount, setSingleAmount] = useState("")
+  const [userEditedSingleAmount, setUserEditedSingleAmount] = useState(false)
+  const [showPaymentInputs, setShowPaymentInputs] = useState(false)
+  const [useSplitPayment, setUseSplitPayment] = useState(false)
   const [cardNumber, setCardNumber] = useState("")
   const [cardExpiry, setCardExpiry] = useState("")
   const [cardCvv, setCardCvv] = useState("")
@@ -271,6 +277,7 @@ export default function CheckoutPage() {
       const sourceCurrencyCode = sourceCurrency?.code ?? item.currencySymbol ?? ""
       const sourceCurrencySymbol = getCurrencyLabel(sourceCurrency, item.currencySymbol ?? "$")
       const sourceUnitPrice = Number(lot?.ligne_approvisionnement?.prix_vente ?? lot?.ligne_approvisionnement?.prix_unitaire ?? item.price ?? 0)
+      const purchaseSourceUnitPrice = Number(lot?.ligne_approvisionnement?.prix_unitaire ?? Number.NaN)
 
       let rate: number | null = 1
       const targetCurrencyId = selectedCurrencyId ?? sourceCurrencyId
@@ -278,10 +285,16 @@ export default function CheckoutPage() {
         rate = rateByPair[makeRateKey(sourceCurrencyId, targetCurrencyId)] ?? null
       }
 
+      const purchaseUnitPrice = Number.isFinite(purchaseSourceUnitPrice)
+        ? rate !== null
+          ? purchaseSourceUnitPrice * rate
+          : null
+        : null
       const proposedUnitPrice = rate ? sourceUnitPrice * rate : sourceUnitPrice
       const overrideValue = lineOverrides[item.id]
       const parsedOverride = overrideValue !== undefined && overrideValue !== "" ? Number.parseFloat(overrideValue) : Number.NaN
       const finalUnitPrice = Number.isFinite(parsedOverride) && parsedOverride >= 0 ? parsedOverride : proposedUnitPrice
+      const isBelowPurchasePrice = purchaseUnitPrice !== null && finalUnitPrice < purchaseUnitPrice
 
       return {
         id: item.id,
@@ -291,11 +304,13 @@ export default function CheckoutPage() {
         sourceCurrencyCode,
         sourceCurrencySymbol,
         sourceUnitPrice,
+        purchaseUnitPrice,
         proposedUnitPrice,
         finalUnitPrice,
         rate,
         lineTotal: finalUnitPrice * item.quantity,
         needsRate: Boolean(sourceCurrencyId && targetCurrencyId && sourceCurrencyId !== targetCurrencyId),
+        isBelowPurchasePrice,
       }
     })
   }, [cart, latestLotByProduct, lineOverrides, rateByPair, selectedCurrencyId])
@@ -311,6 +326,7 @@ export default function CheckoutPage() {
   const grandTotal = Math.max(convertedSubtotal - convertedDiscount, 0)
   const francAmountNum = Number.parseFloat(francAmount) || 0
   const dollarAmountNum = Number.parseFloat(dollarAmount) || 0
+  const singleAmountNum = Number.parseFloat(singleAmount) || 0
   const francRateToSelected = francCurrency?.id && selectedCurrencyId
     ? francCurrency.id === selectedCurrencyId
       ? 1
@@ -323,29 +339,31 @@ export default function CheckoutPage() {
     : null
   const francEquivalent = francAmountNum > 0 ? francAmountNum * (francRateToSelected ?? 0) : 0
   const dollarEquivalent = dollarAmountNum > 0 ? dollarAmountNum * (dollarRateToSelected ?? 0) : 0
-  const paymentAmountNum = francEquivalent + dollarEquivalent
+  const paymentAmountNum = useSplitPayment
+    ? francEquivalent + dollarEquivalent
+    : singleAmountNum
   const remainingBalance = Math.max(grandTotal - paymentAmountNum, 0)
   const remainingBalanceInFranc = francRateToSelected ? remainingBalance / francRateToSelected : null
   const remainingBalanceInDollar = dollarRateToSelected ? remainingBalance / dollarRateToSelected : null
   const isFullPayment = paymentAmountNum >= grandTotal && grandTotal > 0
   const hasMixedSourceCurrencies = new Set(pricingLines.map((line) => line.sourceCurrencyId).filter(Boolean)).size > 1
   const hasPendingRate = pricingLines.some((line) => line.needsRate && line.rate === null)
-  const hasPendingSplitRate = (francAmountNum > 0 && francRateToSelected === null) || (dollarAmountNum > 0 && dollarRateToSelected === null)
+  const hasPendingSplitRate = useSplitPayment && ((francAmountNum > 0 && francRateToSelected === null) || (dollarAmountNum > 0 && dollarRateToSelected === null))
+  const hasLossRisk = pricingLines.some((line) => line.isBelowPurchasePrice)
+  const isSplitPayment = useSplitPayment && francAmountNum > 0 && dollarAmountNum > 0
+  const francSymbol = francCurrency?.symbole ?? francCurrency?.code ?? "FC"
+  const dollarSymbol = dollarCurrency?.symbole ?? dollarCurrency?.code ?? "$"
   const currencySymbol = getCurrencyLabel(selectedCurrency, pricingLines[0]?.sourceCurrencySymbol ?? "$")
 
   useEffect(() => {
-    if (francAmount === "" && dollarAmount === "") {
-      if (francCurrency?.id && selectedCurrencyId === francCurrency.id) {
-        setFrancAmount(grandTotal.toFixed(2))
-      } else if (dollarCurrency?.id && selectedCurrencyId === dollarCurrency.id) {
-        setDollarAmount(grandTotal.toFixed(2))
-      } else if (francCurrency) {
-        setFrancAmount(grandTotal.toFixed(2))
-      } else if (dollarCurrency) {
-        setDollarAmount(grandTotal.toFixed(2))
-      }
-    }
-  }, [grandTotal, francAmount, francCurrency, dollarAmount, dollarCurrency, selectedCurrencyId])
+    // Auto-update the single amount whenever the total or selected currency
+    // changes, but only if the cashier hasn't manually edited the amount
+    // and split-payment is not active.
+    if (useSplitPayment) return
+    if (userEditedSingleAmount) return
+
+    setSingleAmount(grandTotal.toFixed(2))
+  }, [grandTotal, useSplitPayment, selectedCurrencyId, userEditedSingleAmount])
 
   const formatCardNumber = (value: string) => {
     const v = value.replace(/\s+/g, "").replace(/[^0-9]/gi, "")
@@ -456,14 +474,19 @@ export default function CheckoutPage() {
           date: new Date().toISOString().slice(0, 10),
           id_vendeur: Number(authUser.id),
           id_client: Number(customer.id),
-          paiements: [
-            francAmountNum > 0 && francCurrency
-              ? { devise_id: francCurrency.id, montant: Number(francAmountNum.toFixed(2)) }
-              : null,
-            dollarAmountNum > 0 && dollarCurrency
-              ? { devise_id: dollarCurrency.id, montant: Number(dollarAmountNum.toFixed(2)) }
-              : null,
-          ].filter(Boolean),
+          devise_vente_id: selectedCurrencyId,
+          paiements: (
+            useSplitPayment
+              ? [
+                  francAmountNum > 0 && francCurrency
+                    ? { devise_id: francCurrency.id, montant: Number(francAmountNum.toFixed(2)) }
+                    : null,
+                  dollarAmountNum > 0 && dollarCurrency
+                    ? { devise_id: dollarCurrency.id, montant: Number(dollarAmountNum.toFixed(2)) }
+                    : null,
+                ].filter(Boolean)
+              : [singleAmountNum > 0 && selectedCurrencyId ? { devise_id: selectedCurrencyId, montant: Number(singleAmountNum.toFixed(2)) } : null].filter(Boolean)
+          ),
           lignes: pricingLines.map((line) => ({
             id_produit: line.id,
             quantite: line.quantity,
@@ -569,6 +592,15 @@ export default function CheckoutPage() {
                         {line.needsRate && line.rate === null && (
                           <p className="text-xs text-amber-600">Aucun taux actif trouvé pour la devise de ce produit.</p>
                         )}
+                        {line.isBelowPurchasePrice && (
+                          <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
+                            <AlertCircle className="h-4 w-4 text-amber-600" />
+                            <AlertDescription className="text-amber-800 dark:text-amber-200">
+                              Avec ce prix ({currencySymbol}{line.finalUnitPrice.toFixed(2)}), vous risquez d'entrer en perte.
+                              Prix d'achat estimé : {currencySymbol}{(line.purchaseUnitPrice ?? 0).toFixed(2)}.
+                            </AlertDescription>
+                          </Alert>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -621,125 +653,219 @@ export default function CheckoutPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Paiement fractionné</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Vous pouvez payer une partie en franc et une autre en dollar. Le total est converti dans la devise choisie pour la vente.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Montant en franc</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-muted-foreground">{francCurrency?.symbole ?? francCurrency?.code ?? "FC"}</span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      value={francAmount}
-                      onChange={(event) => {
-                        setFrancAmount(event.target.value)
-                      }}
-                      className="pl-7 text-lg font-semibold"
-                    />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Montant de paiement</Label>
+                      <p className="text-sm text-muted-foreground">Saisis le montant à payer. Active le paiement fractionné si tu veux répartir entre francs et dollars.</p>
+                    </div>
+                    {!showPaymentInputs ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setShowPaymentInputs(true)
+                          if (!useSplitPayment) {
+                            setSingleAmount(grandTotal.toFixed(2))
+                            setUserEditedSingleAmount(false)
+                          }
+                        }}
+                      >
+                        Saisir le montant
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="ghost" onClick={() => { setShowPaymentInputs(false); setUseSplitPayment(false); }}>Masquer</Button>
+                    )}
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label>Montant en dollar</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-muted-foreground">{dollarCurrency?.symbole ?? dollarCurrency?.code ?? "$"}</span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      value={dollarAmount}
-                      onChange={(event) => {
-                        setDollarAmount(event.target.value)
-                      }}
-                      className="pl-7 text-lg font-semibold"
-                    />
-                  </div>
-                </div>
+                  {showPaymentInputs && (
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <Label>Montant ({selectedCurrency?.code ?? currencySymbol})</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2.5 text-muted-foreground">{selectedCurrency?.symbole ?? currencySymbol}</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={singleAmount}
+                            onChange={(e) => {
+                              setSingleAmount(e.target.value)
+                              setUserEditedSingleAmount(true)
+                            }}
+                            className="pl-7 text-lg font-semibold"
+                          />
+                        </div>
+                      </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (francCurrency?.id === selectedCurrencyId || !dollarCurrency) {
-                        setFrancAmount(grandTotal.toFixed(2))
-                        setDollarAmount("")
-                      } else {
-                        const francRate = francRateToSelected ?? 1
-                        setFrancAmount((grandTotal / francRate).toFixed(2))
-                        setDollarAmount("")
-                      }
-                    }}
-                    className={paymentAmountNum === grandTotal ? "border-primary bg-primary/10" : ""}
-                  >
-                    Tout en franc
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (dollarCurrency?.id === selectedCurrencyId || !francCurrency) {
-                        setDollarAmount(grandTotal.toFixed(2))
-                        setFrancAmount("")
-                      } else {
-                        const dollarRate = dollarRateToSelected ?? 1
-                        setDollarAmount((grandTotal / dollarRate).toFixed(2))
-                        setFrancAmount("")
-                      }
-                    }}
-                  >
-                    Tout en dollar
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (francCurrency && dollarCurrency) {
-                        const halfTotal = grandTotal / 2
-                        const francRate = francRateToSelected ?? 1
-                        const dollarRate = dollarRateToSelected ?? 1
-                        setFrancAmount((halfTotal / francRate).toFixed(2))
-                        setDollarAmount((halfTotal / dollarRate).toFixed(2))
-                      }
-                    }}
-                  >
-                    Répartition 50 / 50
-                  </Button>
-                </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant={useSplitPayment ? "outline" : "secondary"}
+                          size="sm"
+                          onClick={() => {
+                            setUseSplitPayment(true)
+                            setSingleAmount("")
+                            setFrancAmount("")
+                            setDollarAmount("")
+                            setUserEditedSingleAmount(false)
+                          }}
+                        >
+                          Utiliser paiement fractionné
+                        </Button>
+                        {useSplitPayment && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setUseSplitPayment(false)
+                              if (showPaymentInputs) {
+                                setSingleAmount(grandTotal.toFixed(2))
+                                setUserEditedSingleAmount(false)
+                              }
+                            }}
+                          >
+                            Désactiver paiement fractionné
+                          </Button>
+                        )}
+                      </div>
 
-                {!isFullPayment && paymentAmountNum > 0 && (
-                  <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
-                    <Info className="h-4 w-4 text-amber-600" />
-                    <AlertDescription className="text-amber-800 dark:text-amber-200">
-                      Montant payé équivalent : <strong>{currencySymbol}{paymentAmountNum.toFixed(2)}</strong>.
-                      Reste à payer : <strong>{currencySymbol}{remainingBalance.toFixed(2)}</strong>
-                      {francAmountNum > 0 && remainingBalanceInDollar !== null && dollarCurrency && (
+                      {useSplitPayment && (
                         <>
-                          {" "}Soit en dollar : <strong>{dollarCurrency.symbole ?? dollarCurrency.code ?? "$"}{remainingBalanceInDollar.toFixed(2)}</strong>
+                          <div className="space-y-2">
+                            <Label>Montant en franc</Label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-2.5 text-muted-foreground">{francCurrency?.symbole ?? francCurrency?.code ?? "FC"}</span>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                value={francAmount}
+                                onChange={(event) => setFrancAmount(event.target.value)}
+                                className="pl-7 text-lg font-semibold"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Montant en dollar</Label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-2.5 text-muted-foreground">{dollarCurrency?.symbole ?? dollarCurrency?.code ?? "$"}</span>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                value={dollarAmount}
+                                onChange={(event) => setDollarAmount(event.target.value)}
+                                className="pl-7 text-lg font-semibold"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                if (francAmountNum > 0 && dollarRateToSelected) {
+                                  const remainingInDollar = Math.max((grandTotal - francEquivalent) / dollarRateToSelected, 0)
+                                  setDollarAmount(remainingInDollar.toFixed(2))
+                                }
+                              }}
+                              disabled={francAmountNum <= 0 || !dollarRateToSelected}
+                              className="text-xs"
+                            >
+                              Compléter en $
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                if (dollarAmountNum > 0 && francRateToSelected) {
+                                  const remainingInFranc = Math.max((grandTotal - dollarEquivalent) / francRateToSelected, 0)
+                                  setFrancAmount(remainingInFranc.toFixed(2))
+                                }
+                              }}
+                              disabled={dollarAmountNum <= 0 || !francRateToSelected}
+                              className="text-xs"
+                            >
+                              Compléter en FC
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                if (francCurrency?.id === selectedCurrencyId || !dollarCurrency) {
+                                  setFrancAmount(grandTotal.toFixed(2))
+                                  setDollarAmount("")
+                                } else {
+                                  const francRate = francRateToSelected ?? 1
+                                  setFrancAmount((grandTotal / francRate).toFixed(2))
+                                  setDollarAmount("")
+                                }
+                              }}
+                              className={paymentAmountNum === grandTotal ? "border-primary bg-primary/10" : ""}
+                            >
+                              Tout en franc
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                if (dollarCurrency?.id === selectedCurrencyId || !francCurrency) {
+                                  setDollarAmount(grandTotal.toFixed(2))
+                                  setFrancAmount("")
+                                } else {
+                                  const dollarRate = dollarRateToSelected ?? 1
+                                  setDollarAmount((grandTotal / dollarRate).toFixed(2))
+                                  setFrancAmount("")
+                                }
+                              }}
+                            >
+                              Tout en dollar
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                if (francCurrency && dollarCurrency) {
+                                  const halfTotal = grandTotal / 2
+                                  const francRate = francRateToSelected ?? 1
+                                  const dollarRate = dollarRateToSelected ?? 1
+                                  setFrancAmount((halfTotal / francRate).toFixed(2))
+                                  setDollarAmount((halfTotal / dollarRate).toFixed(2))
+                                }
+                              }}
+                            >
+                              Répartition 50 / 50
+                            </Button>
+                          </div>
                         </>
                       )}
-                      {dollarAmountNum > 0 && remainingBalanceInFranc !== null && francCurrency && (
-                        <>
-                          {" "}Soit en franc : <strong>{francCurrency.symbole ?? francCurrency.code ?? "FC"}{remainingBalanceInFranc.toFixed(2)}</strong>
-                        </>
-                      )}
-                    </AlertDescription>
-                  </Alert>
-                )}
 
-                {isFullPayment && paymentAmountNum > 0 && (
-                  <Alert className="border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    <AlertDescription className="text-emerald-800 dark:text-emerald-200">
-                      Paiement complet, aucun reste à payer.
-                    </AlertDescription>
-                  </Alert>
-                )}
+                      {showPaymentInputs && !useSplitPayment && (
+                        <div className="mt-2">
+                          {!isFullPayment && singleAmountNum > 0 && (
+                            <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
+                              <Info className="h-4 w-4 text-amber-600" />
+                              <AlertDescription className="text-amber-800 dark:text-amber-200">
+                                Montant payé équivalent : <strong>{currencySymbol}{paymentAmountNum.toFixed(2)}</strong>.
+                                Reste à payer : <strong>{currencySymbol}{remainingBalance.toFixed(2)}</strong>
+                              </AlertDescription>
+                            </Alert>
+                          )}
+
+                          {isFullPayment && singleAmountNum > 0 && (
+                            <Alert className="border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800">
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              <AlertDescription className="text-emerald-800 dark:text-emerald-200">
+                                Paiement complet, aucun reste à payer.
+                              </AlertDescription>
+                            </Alert>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -867,6 +993,14 @@ export default function CheckoutPage() {
                       </AlertDescription>
                     </Alert>
                   )}
+                  {hasLossRisk && (
+                    <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
+                      <AlertCircle className="h-4 w-4 text-amber-600" />
+                      <AlertDescription className="text-amber-800 dark:text-amber-200">
+                        Une ou plusieurs lignes sont en dessous du prix d'achat. Vérifie les prix unitaires avant validation.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -892,7 +1026,9 @@ export default function CheckoutPage() {
                 </div>
               ) : (
                 <>
-                  {isFullPayment ? "Paiement complet" : "Valider le paiement partiel"} - {currencySymbol}{paymentAmountNum.toFixed(2)}
+                  {isSplitPayment
+                    ? `Valider paiement fractionné (${francSymbol}${francAmountNum.toFixed(2)} + ${dollarSymbol}${dollarAmountNum.toFixed(2)})`
+                    : `${isFullPayment ? "Paiement complet" : "Valider le paiement partiel"} - ${currencySymbol}${paymentAmountNum.toFixed(2)}`}
                 </>
               )}
             </Button>

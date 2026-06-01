@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { ShoppingCart } from "lucide-react"
+import { Filter, History, Loader2, RefreshCw, ShoppingCart, Trash2, TrendingUp } from "lucide-react"
 import ProductGrid from "./components/product-grid"
 import CartSidebar from "./components/cart-sidebar"
 import CategorySidebar from "./components/category-sidebar"
@@ -13,7 +13,14 @@ import { useRouter } from "next/navigation"
 import { backendRequest } from "./services/backend"
 import type { Product } from "./context/cart-context"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 
 type POSSettings = {
@@ -53,6 +60,37 @@ type StockRow = {
   stock_actuel: number
 }
 
+type SaleClient = {
+  id: number
+  nom: string
+  post_nom?: string | null
+  prenom?: string | null
+}
+
+type SaleVendor = {
+  id: number
+  nom: string
+  prenom?: string | null
+}
+
+type SaleLine = {
+  id: number
+  quantite: number
+  prix_vente: string
+}
+
+type Sale = {
+  id: number
+  code: string
+  date: string
+  created_at?: string
+  id_vendeur: number
+  id_client: number
+  vendeur?: SaleVendor
+  client?: SaleClient
+  lignes: SaleLine[]
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -69,6 +107,34 @@ function getPhotoUrl(photo: string | null | undefined) {
   return `/storage/${photo.replace(/^\/+/, "")}`
 }
 
+function getToday() {
+  const date = new Date()
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "—"
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date)
+}
+
+function saleTotal(sale: Sale) {
+  return (sale.lignes ?? []).reduce((sum, line) => sum + Number(line.quantite) * Number(line.prix_vente), 0)
+}
+
+function isCancelableSale(sale: Sale) {
+  if (!sale.created_at) return false
+
+  const elapsed = Date.now() - new Date(sale.created_at).getTime()
+  return Number.isFinite(elapsed) && elapsed <= 60 * 60 * 1000
+}
+
 export default function POSPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
@@ -80,6 +146,13 @@ export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([{ id: "all", name: "Tous les produits" }])
   const [loadingProducts, setLoadingProducts] = useState(true)
+  const [sales, setSales] = useState<Sale[]>([])
+  const [salesLoading, setSalesLoading] = useState(false)
+  const [salesError, setSalesError] = useState("")
+  const [salePeriod, setSalePeriod] = useState<"today" | "month" | "all">("today")
+  const [saleDate, setSaleDate] = useState(getToday())
+  const [saleMonth, setSaleMonth] = useState(getToday().slice(0, 7))
+  const [saleSortDirection, setSaleSortDirection] = useState<"desc" | "asc">("desc")
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -128,6 +201,55 @@ export default function POSPage() {
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [handleKeyDown])
+
+  const fetchSales = useCallback(async () => {
+    if (!user) return
+
+    setSalesLoading(true)
+    setSalesError("")
+
+    try {
+      const params = new URLSearchParams({
+        per_page: "0",
+        sort_by: "created_at",
+        sort_direction: saleSortDirection,
+      })
+
+      if (salePeriod === "today") {
+        params.set("period", "daily")
+        params.set("date", saleDate)
+      } else if (salePeriod === "month") {
+        params.set("period", "monthly")
+        params.set("month", saleMonth)
+      }
+
+      const response = await backendRequest<{ data: Sale[] }>(`/ventes?${params.toString()}`)
+      setSales((response.data ?? []).map((sale) => ({ ...sale, lignes: sale.lignes ?? [] })))
+    } catch (error) {
+      setSalesError(error instanceof Error ? error.message : "Impossible de charger les ventes.")
+    } finally {
+      setSalesLoading(false)
+    }
+  }, [saleDate, saleMonth, salePeriod, saleSortDirection, user])
+
+  useEffect(() => {
+    if (!user) return
+
+    void fetchSales()
+  }, [user, fetchSales])
+
+  const handleCancelSale = async (sale: Sale) => {
+    if (!confirm(`Annuler la vente ${sale.code} ?`)) {
+      return
+    }
+
+    try {
+      await backendRequest(`/ventes/${sale.id}`, { method: "DELETE" })
+      setSales((prev) => prev.filter((item) => item.id !== sale.id))
+    } catch (error) {
+      setSalesError(error instanceof Error ? error.message : "Impossible d'annuler cette vente.")
+    }
+  }
 
   useEffect(() => {
     if (!user) return
@@ -277,6 +399,9 @@ export default function POSPage() {
     return null
   }
 
+  const totalSalesAmount = sales.reduce((sum, sale) => sum + saleTotal(sale), 0)
+  const cancelableSales = sales.filter((sale) => isCancelableSale(sale)).length
+
   return (
     <div className="flex min-h-screen flex-col bg-background lg:flex-row">
       <CategorySidebar selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} categories={categories} />
@@ -284,9 +409,179 @@ export default function POSPage() {
       <main className="flex min-h-0 flex-1 flex-col">
         <Header searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
 
-        <div className="flex-1 overflow-auto p-3 sm:p-4">
-          <ProductGrid category={selectedCategory} searchQuery={searchQuery} products={products} />
-        </div>
+        <Tabs defaultValue="catalog" className="flex min-h-0 flex-1 flex-col">
+          <div className="border-b bg-background/95 px-3 py-3 shadow-sm backdrop-blur sm:px-4">
+            <TabsList className="grid h-12 w-full max-w-md grid-cols-2 rounded-2xl bg-muted/80 p-1">
+              <TabsTrigger
+                value="catalog"
+                className="rounded-xl text-sm font-semibold data-[state=active]:bg-background data-[state=active]:text-foreground"
+              >
+                Catalogue
+              </TabsTrigger>
+              <TabsTrigger
+                value="sales"
+                className="rounded-xl text-sm font-semibold data-[state=active]:bg-background data-[state=active]:text-foreground"
+              >
+                <span className="flex items-center gap-2">
+                  <History className="h-4 w-4" />
+                  Mes ventes
+                  <Badge variant="secondary" className="h-5 rounded-full px-2 text-[10px]">
+                    {sales.length}
+                  </Badge>
+                </span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value="catalog" className="m-0 flex-1 overflow-auto p-3 sm:p-4">
+            <ProductGrid category={selectedCategory} searchQuery={searchQuery} products={products} />
+          </TabsContent>
+
+          <TabsContent value="sales" className="m-0 flex-1 overflow-auto p-3 sm:p-4">
+            <div className="space-y-4">
+              {salesError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{salesError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-sm text-muted-foreground">Ventes affichées</p>
+                    <p className="text-2xl font-bold">{sales.length}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-sm text-muted-foreground">Montant total</p>
+                    <p className="text-2xl font-bold">{totalSalesAmount.toFixed(2)}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-sm text-muted-foreground">Annulables maintenant</p>
+                    <p className="text-2xl font-bold">{cancelableSales}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <History className="h-4 w-4" />Historique des ventes
+                    </CardTitle>
+                    <Button variant="outline" onClick={() => void fetchSales()} disabled={salesLoading}>
+                      <RefreshCw className={`mr-2 h-4 w-4 ${salesLoading ? "animate-spin" : ""}`} />Actualiser
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <div className="space-y-1">
+                      <Label>Période</Label>
+                      <Select value={salePeriod} onValueChange={(value) => setSalePeriod(value as "today" | "month" | "all")}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choisir une période" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="today">Journalier</SelectItem>
+                          <SelectItem value="month">Mensuel</SelectItem>
+                          <SelectItem value="all">Toutes</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {salePeriod === "today" && (
+                      <div className="space-y-1">
+                        <Label>Date</Label>
+                        <Input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
+                      </div>
+                    )}
+                    {salePeriod === "month" && (
+                      <div className="space-y-1">
+                        <Label>Mois</Label>
+                        <Input type="month" value={saleMonth} onChange={(e) => setSaleMonth(e.target.value)} />
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      <Label>Tri</Label>
+                      <Select value={saleSortDirection} onValueChange={(value) => setSaleSortDirection(value as "asc" | "desc")}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Ordre" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="desc">Plus récentes</SelectItem>
+                          <SelectItem value="asc">Plus anciennes</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden rounded-2xl border">
+                    {salesLoading ? (
+                      <div className="flex justify-center py-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : sales.length === 0 ? (
+                      <div className="py-12 text-center text-muted-foreground">
+                        <TrendingUp className="mx-auto mb-3 h-12 w-12 opacity-40" />Aucune vente trouvée.
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Code</TableHead>
+                            <TableHead>Date / heure</TableHead>
+                            <TableHead>Client</TableHead>
+                            <TableHead>Montant</TableHead>
+                            <TableHead>Statut</TableHead>
+                            <TableHead className="w-24" />
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sales.map((sale) => {
+                            const cancelable = isCancelableSale(sale)
+
+                            return (
+                              <TableRow key={sale.id}>
+                                <TableCell className="font-mono text-xs">{sale.code}</TableCell>
+                                <TableCell>{formatDateTime(sale.created_at ?? sale.date)}</TableCell>
+                                <TableCell>
+                                  {[sale.client?.prenom, sale.client?.post_nom, sale.client?.nom].filter(Boolean).join(" ") || "—"}
+                                </TableCell>
+                                <TableCell className="font-semibold text-emerald-600">{saleTotal(sale).toFixed(2)}</TableCell>
+                                <TableCell>
+                                  <Badge variant={cancelable ? "secondary" : "outline"}>
+                                    {cancelable ? "Annulable" : "Trop tard"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="h-8"
+                                    disabled={!cancelable}
+                                    onClick={() => void handleCancelSale(sale)}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />Annuler
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Filter className="h-3.5 w-3.5" />Les ventes sont automatiquement limitées à votre compte vendeur.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
       </main>
 
       <div className="hidden md:block">

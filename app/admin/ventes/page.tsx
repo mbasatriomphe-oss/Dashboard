@@ -43,6 +43,11 @@ interface Vente {
   date: string
   id_vendeur: number
   id_client: number
+  devise_vente_id?: number | null
+  montant_total?: number | string | null
+  montant_paye?: number | string | null
+  reste_a_payer?: number | string | null
+  statut_paiement?: string | null
   vendeur?: Vendeur
   client?: Client
   lignes: LigneVente[]
@@ -267,7 +272,23 @@ export default function VentesPage() {
     const totalClients = new Set(ventes.map(v => v.id_client)).size
     const totalProduits = ventes.reduce((s, v) => s + (v.lignes?.length ?? 0), 0)
     const totalMontant = ventes.reduce((s, v) => s + (v.lignes ?? []).reduce((ls, l) => ls + Number(l.quantite) * Number(l.prix_vente), 0), 0)
-    return { totalVentes, totalClients, totalProduits, totalMontant }
+    const totalDette = ventes.reduce((s, v) => s + Number(v.reste_a_payer ?? 0), 0)
+    const ventesEnDette = ventes.filter(v => Number(v.reste_a_payer ?? 0) > 0).length
+    return { totalVentes, totalClients, totalProduits, totalMontant, totalDette, ventesEnDette }
+  }, [ventes])
+
+  const debtByClient = useMemo(() => {
+    const grouped = new Map<string, { client: string; amount: number; count: number }>()
+
+    for (const vente of ventes.filter((item) => Number(item.reste_a_payer ?? 0) > 0)) {
+      const key = String(vente.id_client)
+      const current = grouped.get(key) ?? { client: clientName(vente.client), amount: 0, count: 0 }
+      current.amount += Number(vente.reste_a_payer ?? 0)
+      current.count += 1
+      grouped.set(key, current)
+    }
+
+    return Array.from(grouped.values()).sort((left, right) => right.amount - left.amount)
   }, [ventes])
 
   return (
@@ -298,6 +319,8 @@ export default function VentesPage() {
           { icon: Truck, label: "Clients actifs", value: stats.totalClients, bg: "bg-amber-100", text: "text-amber-600" },
           { icon: Layers, label: "Lignes produits", value: stats.totalProduits, bg: "bg-emerald-100", text: "text-emerald-600" },
           { icon: DollarSign, label: "Montant total", value: stats.totalMontant.toFixed(2), bg: "bg-violet-100", text: "text-violet-600" },
+          { icon: DollarSign, label: "Dettes", value: stats.totalDette.toFixed(2), bg: "bg-rose-100", text: "text-rose-600" },
+          { icon: ShoppingCart, label: "Commandes à crédit", value: stats.ventesEnDette, bg: "bg-orange-100", text: "text-orange-600" },
         ].map(({ icon: Icon, label, value, bg, text }) => (
           <Card key={label}>
             <CardContent className="p-4">
@@ -314,6 +337,7 @@ export default function VentesPage() {
         <TabsList>
           <TabsTrigger value="history">Historique</TabsTrigger>
           <TabsTrigger value="details">Détails</TabsTrigger>
+          <TabsTrigger value="debts">Dettes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="history" className="space-y-4">
@@ -344,12 +368,16 @@ export default function VentesPage() {
                       <TableHead>Vendeur</TableHead>
                       <TableHead>Produits</TableHead>
                       <TableHead>Montant</TableHead>
+                      <TableHead>Payé</TableHead>
+                      <TableHead>Reste</TableHead>
                       <TableHead className="w-12" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filtered.map(v => {
-                      const montant = (v.lignes ?? []).reduce((s, l) => s + Number(l.quantite) * Number(l.prix_vente), 0)
+                      const montant = Number(v.montant_total ?? (v.lignes ?? []).reduce((s, l) => s + Number(l.quantite) * Number(l.prix_vente), 0))
+                      const montantPaye = Number(v.montant_paye ?? 0)
+                      const reste = Number(v.reste_a_payer ?? Math.max(montant - montantPaye, 0))
                       return (
                         <TableRow key={v.id}>
                           <TableCell className="font-mono text-xs">{v.code}</TableCell>
@@ -358,6 +386,8 @@ export default function VentesPage() {
                           <TableCell>{v.vendeur ? `${v.vendeur.prenom} ${v.vendeur.nom}` : `#${v.id_vendeur}`}</TableCell>
                           <TableCell><Badge variant="secondary">{v.lignes?.length ?? 0}</Badge></TableCell>
                           <TableCell className="font-semibold text-emerald-600">{montant.toFixed(2)}</TableCell>
+                          <TableCell className="font-semibold text-blue-600">{montantPaye.toFixed(2)}</TableCell>
+                          <TableCell className={reste > 0 ? "font-semibold text-rose-600" : "font-semibold text-emerald-600"}>{reste.toFixed(2)}</TableCell>
                           <TableCell>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -392,6 +422,8 @@ export default function VentesPage() {
                   <p>Client: <span className="font-medium text-foreground">{clientName(selected.client)}</span></p>
                   <p>Vendeur: <span className="font-medium text-foreground">{selected.vendeur ? `${selected.vendeur.prenom} ${selected.vendeur.nom}` : "—"}</span></p>
                   <p>Date: <span className="font-medium text-foreground">{selected.date}</span></p>
+                  <p>Payé: <span className="font-medium text-foreground">{fmt(selected.montant_paye ?? 0)}</span></p>
+                  <p>Reste à payer: <span className={`font-medium ${Number(selected.reste_a_payer ?? 0) > 0 ? "text-rose-600" : "text-foreground"}`}>{fmt(selected.reste_a_payer ?? 0)}</span></p>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
@@ -422,6 +454,38 @@ export default function VentesPage() {
           ) : (
             <Card><CardContent className="py-12 text-center text-muted-foreground"><Layers className="h-12 w-12 mx-auto mb-3 opacity-40" />Sélectionne une vente dans l'onglet Historique.</CardContent></Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="debts" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Ventes avec dette</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {debtByClient.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground">Aucune dette enregistrée.</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Nombre de ventes</TableHead>
+                      <TableHead>Dette totale</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {debtByClient.map((entry) => (
+                      <TableRow key={entry.client}>
+                        <TableCell>{entry.client}</TableCell>
+                        <TableCell><Badge variant="secondary">{entry.count}</Badge></TableCell>
+                        <TableCell className="font-semibold text-rose-600">{entry.amount.toFixed(2)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 

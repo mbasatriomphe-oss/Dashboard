@@ -50,11 +50,11 @@ export default function ProductGrid({ category, searchQuery, products }: Product
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 sm:gap-4">
+    <div className="grid grid-cols-3 gap-2 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
       {filteredProducts.map((product) => (
         <Card
           key={product.id}
-          className={`group overflow-hidden transition-all duration-200 ${
+          className={`group w-full overflow-hidden transition-all duration-200 ${
             (product.stock ?? 0) <= 0
               ? "cursor-not-allowed opacity-60"
               : "cursor-pointer hover:scale-105 hover:shadow-md"
@@ -86,18 +86,20 @@ export default function ProductGrid({ category, searchQuery, products }: Product
               </div>
             )}
           </div>
-          <CardContent className="p-3 sm:p-4">
-            <div className="space-y-1">
+          <CardContent className="p-2">
+            <div className="space-y-0.5 sm:space-y-1">
               {product.categoryLabel && (
-                <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+                <Badge variant="secondary" className="hidden text-[10px] uppercase tracking-wide sm:inline-flex">
                   {product.categoryLabel}
                 </Badge>
               )}
-              <h3 className="font-medium line-clamp-1">{product.name}</h3>
-              <p className="text-sm font-semibold text-emerald-600">
+              <h3 className="line-clamp-2 text-[11px] font-medium leading-tight sm:line-clamp-1 sm:text-sm">
+                {product.name}
+              </h3>
+              <p className="text-[11px] font-semibold text-emerald-600 sm:text-sm">
                 {(product.currencySymbol ?? "$")}{product.price.toFixed(2)}
               </p>
-              {(product.stock ?? 0) > 0 && <p className="text-xs text-muted-foreground">Disponible immédiatement</p>}
+              {(product.stock ?? 0) > 0 && <p className="hidden text-[11px] text-muted-foreground sm:block">Disponible immédiatement</p>}
             </div>
           </CardContent>
         </Card>
