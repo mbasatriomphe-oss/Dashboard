@@ -339,8 +339,63 @@ export default function CheckoutPage() {
     : null
   const francEquivalent = francAmountNum > 0 ? francAmountNum * (francRateToSelected ?? 0) : 0
   const dollarEquivalent = dollarAmountNum > 0 ? dollarAmountNum * (dollarRateToSelected ?? 0) : 0
+  // Numeric helpers using a small epsilon to avoid floating point underflow
+  const EPS = 1e-8
+  const roundToDecimals = (v: number, decimals: number) => {
+    const p = Math.pow(10, decimals)
+    return Math.round((v + EPS) * p) / p
+  }
+
+  const ceilToDecimals = (v: number, decimals: number) => {
+    const p = Math.pow(10, decimals)
+    return Math.ceil((v + EPS) * p) / p
+  }
+
+  const floorToDecimals = (v: number, decimals: number) => {
+    const p = Math.pow(10, decimals)
+    return Math.floor((v + EPS) * p) / p
+  }
+
+  const mulExact = (a: number, b: number, decimals = 2) => {
+    const p = Math.pow(10, decimals)
+    return Math.round((a * b + EPS) * p) / p
+  }
+
+  const currencyDecimals = (currency?: BackendDevise | null) =>
+    currency && (/^(cdf|fc)$/i.test(currency.code) || /franc/i.test(currency.nom) || currency.symbole === "FC")
+      ? 0
+      : 2
+
+  const decimalsSelected = currencyDecimals(selectedCurrency)
+
+  const formatAmountForDisplay = (v: number, currency?: BackendDevise | null) => {
+    const s = v.toFixed(currencyDecimals(currency))
+    return s.includes(".") ? s.replace(/\.?0+$/g, "") : s
+  }
+
+  const francEquivalentRounded = mulExact(francAmountNum, (francRateToSelected ?? 0), decimalsSelected)
+  const dollarEquivalentRounded = mulExact(dollarAmountNum, (dollarRateToSelected ?? 0), decimalsSelected)
+  const suggestedDollarFromFranc = (() => {
+    if (!useSplitPayment) return null
+    if (francAmountNum <= 0) return null
+    if (!dollarRateToSelected) return null
+    const remainingSelected = Math.max(grandTotal - francEquivalentRounded, 0)
+    if (dollarRateToSelected <= 0) return null
+    const targetDecimals = Math.max(0, currencyDecimals(dollarCurrency) - 1)
+    return roundToDecimals(remainingSelected / dollarRateToSelected, targetDecimals)
+  })()
+
+  const suggestedFrancFromDollar = (() => {
+    if (!useSplitPayment) return null
+    if (dollarAmountNum <= 0) return null
+    if (!francRateToSelected) return null
+    const remainingSelected = Math.max(grandTotal - dollarEquivalentRounded, 0)
+    if (francRateToSelected <= 0) return null
+    const targetDecimals = Math.max(0, currencyDecimals(francCurrency) - 1)
+    return roundToDecimals(remainingSelected / francRateToSelected, targetDecimals)
+  })()
   const paymentAmountNum = useSplitPayment
-    ? francEquivalent + dollarEquivalent
+    ? francEquivalentRounded + dollarEquivalentRounded
     : singleAmountNum
   const remainingBalance = Math.max(grandTotal - paymentAmountNum, 0)
   const remainingBalanceInFranc = francRateToSelected ? remainingBalance / francRateToSelected : null
@@ -362,7 +417,7 @@ export default function CheckoutPage() {
     if (useSplitPayment) return
     if (userEditedSingleAmount) return
 
-    setSingleAmount(grandTotal.toFixed(2))
+    setSingleAmount(grandTotal.toFixed(decimalsSelected))
   }, [grandTotal, useSplitPayment, selectedCurrencyId, userEditedSingleAmount])
 
   const formatCardNumber = (value: string) => {
@@ -479,18 +534,18 @@ export default function CheckoutPage() {
             useSplitPayment
               ? [
                   francAmountNum > 0 && francCurrency
-                    ? { devise_id: francCurrency.id, montant: Number(francAmountNum.toFixed(2)) }
+                    ? { devise_id: francCurrency.id, montant: Number(francAmountNum.toFixed(currencyDecimals(francCurrency))) }
                     : null,
                   dollarAmountNum > 0 && dollarCurrency
-                    ? { devise_id: dollarCurrency.id, montant: Number(dollarAmountNum.toFixed(2)) }
+                    ? { devise_id: dollarCurrency.id, montant: Number(dollarAmountNum.toFixed(currencyDecimals(dollarCurrency))) }
                     : null,
                 ].filter(Boolean)
-              : [singleAmountNum > 0 && selectedCurrencyId ? { devise_id: selectedCurrencyId, montant: Number(singleAmountNum.toFixed(2)) } : null].filter(Boolean)
+              : [singleAmountNum > 0 && selectedCurrencyId ? { devise_id: selectedCurrencyId, montant: Number(singleAmountNum.toFixed(decimalsSelected)) } : null].filter(Boolean)
           ),
           lignes: pricingLines.map((line) => ({
             id_produit: line.id,
             quantite: line.quantity,
-            prix_vente: Number(line.finalUnitPrice.toFixed(2)),
+            prix_vente: Number(line.finalUnitPrice.toFixed(decimalsSelected)),
             id_devise: selectedCurrencyId,
           })),
         }),
@@ -498,7 +553,7 @@ export default function CheckoutPage() {
 
       clearCart()
       router.push(
-        `/success?amount=${paymentAmountNum.toFixed(2)}&remaining=${remainingBalance.toFixed(2)}&receipt=${response.data?.code ?? response.data?.id ?? Date.now()}`,
+        `/success?amount=${paymentAmountNum.toFixed(decimalsSelected)}&remaining=${remainingBalance.toFixed(decimalsSelected)}&receipt=${response.data?.code ?? response.data?.id ?? Date.now()}`,
       )
     } catch (error) {
       setPaymentError({
@@ -559,15 +614,15 @@ export default function CheckoutPage() {
                       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-4">
                         <div>
                           <p className="font-medium text-foreground">{line.name}</p>
-                          <p className="text-sm text-muted-foreground">
+                            <p className="text-sm text-muted-foreground">
                             {line.quantity} x {line.sourceCurrencySymbol}{line.sourceUnitPrice.toFixed(2)} {line.sourceCurrencyCode ? `(${line.sourceCurrencyCode})` : ""}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Proposé : {currencySymbol}{line.proposedUnitPrice.toFixed(2)} {selectedCurrency?.code ? `(${selectedCurrency.code})` : ""}
+                            Proposé : {currencySymbol}{line.proposedUnitPrice.toFixed(decimalsSelected)} {selectedCurrency?.code ? `(${selectedCurrency.code})` : ""}
                           </p>
                         </div>
                         <p className="font-semibold text-foreground">
-                          {currencySymbol}{line.lineTotal.toFixed(2)}
+                          {currencySymbol}{line.lineTotal.toFixed(decimalsSelected)}
                         </p>
                       </div>
 
@@ -578,7 +633,7 @@ export default function CheckoutPage() {
                           type="number"
                           step="0.01"
                           min="0"
-                          value={lineOverrides[line.id] ?? line.finalUnitPrice.toFixed(2)}
+                          value={lineOverrides[line.id] ?? line.finalUnitPrice.toFixed(decimalsSelected)}
                           onChange={(event) => {
                             setPaymentError(null)
                             setLineOverrides((current) => ({ ...current, [line.id]: event.target.value }))
@@ -596,8 +651,8 @@ export default function CheckoutPage() {
                           <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
                             <AlertCircle className="h-4 w-4 text-amber-600" />
                             <AlertDescription className="text-amber-800 dark:text-amber-200">
-                              Avec ce prix ({currencySymbol}{line.finalUnitPrice.toFixed(2)}), vous risquez d'entrer en perte.
-                              Prix d'achat estimé : {currencySymbol}{(line.purchaseUnitPrice ?? 0).toFixed(2)}.
+                              Avec ce prix ({currencySymbol}{line.finalUnitPrice.toFixed(decimalsSelected)}), vous risquez d'entrer en perte.
+                              Prix d'achat estimé : {currencySymbol}{(line.purchaseUnitPrice ?? 0).toFixed(decimalsSelected)}.
                             </AlertDescription>
                           </Alert>
                         )}
@@ -611,18 +666,18 @@ export default function CheckoutPage() {
                 <div className="space-y-3">
                   <div className="flex justify-between text-foreground">
                     <p>Sous-total</p>
-                    <p>{currencySymbol}{convertedSubtotal.toFixed(2)}</p>
+                    <p>{currencySymbol}{convertedSubtotal.toFixed(decimalsSelected)}</p>
                   </div>
                   {convertedDiscount > 0 && (
                     <div className="flex justify-between text-emerald-600">
                       <p>Remise</p>
-                      <p>-{currencySymbol}{convertedDiscount.toFixed(2)}</p>
+                      <p>-{currencySymbol}{convertedDiscount.toFixed(decimalsSelected)}</p>
                     </div>
                   )}
                   <Separator className="my-2" />
                   <div className="flex justify-between text-lg font-bold text-foreground">
                     <p>Total</p>
-                    <p>{currencySymbol}{grandTotal.toFixed(2)}</p>
+                    <p>{currencySymbol}{grandTotal.toFixed(decimalsSelected)}</p>
                   </div>
                 </div>
               </CardContent>
@@ -662,10 +717,10 @@ export default function CheckoutPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
+                          onClick={() => {
                           setShowPaymentInputs(true)
                           if (!useSplitPayment) {
-                            setSingleAmount(grandTotal.toFixed(2))
+                            setSingleAmount(grandTotal.toFixed(decimalsSelected))
                             setUserEditedSingleAmount(false)
                           }
                         }}
@@ -718,7 +773,7 @@ export default function CheckoutPage() {
                             onClick={() => {
                               setUseSplitPayment(false)
                               if (showPaymentInputs) {
-                                setSingleAmount(grandTotal.toFixed(2))
+                                setSingleAmount(grandTotal.toFixed(decimalsSelected))
                                 setUserEditedSingleAmount(false)
                               }
                             }}
@@ -742,6 +797,9 @@ export default function CheckoutPage() {
                                 onChange={(event) => setFrancAmount(event.target.value)}
                                 className="pl-7 text-lg font-semibold"
                               />
+                                      {suggestedDollarFromFranc !== null && (
+                                        <p className="mt-1 text-sm text-muted-foreground">Compléter en {dollarSymbol} : <strong>{dollarSymbol}{formatAmountForDisplay(suggestedDollarFromFranc, dollarCurrency)}</strong></p>
+                                      )}
                             </div>
                           </div>
 
@@ -757,6 +815,9 @@ export default function CheckoutPage() {
                                 onChange={(event) => setDollarAmount(event.target.value)}
                                 className="pl-7 text-lg font-semibold"
                               />
+                              {suggestedFrancFromDollar !== null && (
+                                <p className="mt-1 text-sm text-muted-foreground">Compléter en {francSymbol} : <strong>{francSymbol}{formatAmountForDisplay(suggestedFrancFromDollar, francCurrency)}</strong></p>
+                              )}
                             </div>
                           </div>
 
@@ -766,8 +827,9 @@ export default function CheckoutPage() {
                               size="sm"
                               onClick={() => {
                                 if (francAmountNum > 0 && dollarRateToSelected) {
-                                  const remainingInDollar = Math.max((grandTotal - francEquivalent) / dollarRateToSelected, 0)
-                                  setDollarAmount(remainingInDollar.toFixed(2))
+                                  const remainingSelected = Math.max(grandTotal - francEquivalentRounded, 0)
+                                  const suggested = ceilToDecimals(remainingSelected / dollarRateToSelected, currencyDecimals(dollarCurrency))
+                                  setDollarAmount(suggested.toFixed(currencyDecimals(dollarCurrency)))
                                 }
                               }}
                               disabled={francAmountNum <= 0 || !dollarRateToSelected}
@@ -780,8 +842,9 @@ export default function CheckoutPage() {
                               size="sm"
                               onClick={() => {
                                 if (dollarAmountNum > 0 && francRateToSelected) {
-                                  const remainingInFranc = Math.max((grandTotal - dollarEquivalent) / francRateToSelected, 0)
-                                  setFrancAmount(remainingInFranc.toFixed(2))
+                                  const remainingSelected = Math.max(grandTotal - dollarEquivalentRounded, 0)
+                                  const suggested = ceilToDecimals(remainingSelected / francRateToSelected, currencyDecimals(francCurrency))
+                                  setFrancAmount(suggested.toFixed(currencyDecimals(francCurrency)))
                                 }
                               }}
                               disabled={dollarAmountNum <= 0 || !francRateToSelected}
@@ -794,11 +857,11 @@ export default function CheckoutPage() {
                               size="sm"
                               onClick={() => {
                                 if (francCurrency?.id === selectedCurrencyId || !dollarCurrency) {
-                                  setFrancAmount(grandTotal.toFixed(2))
+                                  setFrancAmount(grandTotal.toFixed(currencyDecimals(francCurrency)))
                                   setDollarAmount("")
-                                } else {
-                                  const francRate = francRateToSelected ?? 1
-                                  setFrancAmount((grandTotal / francRate).toFixed(2))
+                                } else if (francRateToSelected) {
+                                  const suggested = ceilToDecimals(grandTotal / francRateToSelected, currencyDecimals(francCurrency))
+                                  setFrancAmount(suggested.toFixed(currencyDecimals(francCurrency)))
                                   setDollarAmount("")
                                 }
                               }}
@@ -811,11 +874,11 @@ export default function CheckoutPage() {
                               size="sm"
                               onClick={() => {
                                 if (dollarCurrency?.id === selectedCurrencyId || !francCurrency) {
-                                  setDollarAmount(grandTotal.toFixed(2))
+                                  setDollarAmount(grandTotal.toFixed(currencyDecimals(dollarCurrency)))
                                   setFrancAmount("")
-                                } else {
-                                  const dollarRate = dollarRateToSelected ?? 1
-                                  setDollarAmount((grandTotal / dollarRate).toFixed(2))
+                                } else if (dollarRateToSelected) {
+                                  const suggested = ceilToDecimals(grandTotal / dollarRateToSelected, currencyDecimals(dollarCurrency))
+                                  setDollarAmount(suggested.toFixed(currencyDecimals(dollarCurrency)))
                                   setFrancAmount("")
                                 }
                               }}
@@ -826,13 +889,33 @@ export default function CheckoutPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => {
-                                if (francCurrency && dollarCurrency) {
-                                  const halfTotal = grandTotal / 2
-                                  const francRate = francRateToSelected ?? 1
-                                  const dollarRate = dollarRateToSelected ?? 1
-                                  setFrancAmount((halfTotal / francRate).toFixed(2))
-                                  setDollarAmount((halfTotal / dollarRate).toFixed(2))
+                                if (!(francCurrency && dollarCurrency && francRateToSelected && dollarRateToSelected)) return
+
+                                const halfSelected = grandTotal / 2
+
+                                // If selected currency is dollar, make dollar half exact and compute franc equivalent
+                                if (selectedCurrencyId === dollarCurrency?.id) {
+                                  const dollarVal = roundToDecimals(halfSelected, currencyDecimals(dollarCurrency))
+                                  const francVal = ceilToDecimals(halfSelected / (francRateToSelected ?? 1), currencyDecimals(francCurrency))
+                                  setDollarAmount(dollarVal.toFixed(currencyDecimals(dollarCurrency)))
+                                  setFrancAmount(francVal.toFixed(currencyDecimals(francCurrency)))
+                                  return
                                 }
+
+                                // If selected currency is franc, make franc half exact and compute dollar equivalent
+                                if (selectedCurrencyId === francCurrency?.id) {
+                                  const francVal = roundToDecimals(halfSelected, currencyDecimals(francCurrency))
+                                  const dollarVal = ceilToDecimals(halfSelected / (dollarRateToSelected ?? 1), currencyDecimals(dollarCurrency))
+                                  setFrancAmount(francVal.toFixed(currencyDecimals(francCurrency)))
+                                  setDollarAmount(dollarVal.toFixed(currencyDecimals(dollarCurrency)))
+                                  return
+                                }
+
+                                // Fallback: compute each side from halfSelected using their rates
+                                const francSuggested = ceilToDecimals(halfSelected / (francRateToSelected ?? 1), currencyDecimals(francCurrency))
+                                const dollarSuggested = ceilToDecimals(halfSelected / (dollarRateToSelected ?? 1), currencyDecimals(dollarCurrency))
+                                setFrancAmount(francSuggested.toFixed(currencyDecimals(francCurrency)))
+                                setDollarAmount(dollarSuggested.toFixed(currencyDecimals(dollarCurrency)))
                               }}
                             >
                               Répartition 50 / 50
@@ -847,8 +930,8 @@ export default function CheckoutPage() {
                             <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
                               <Info className="h-4 w-4 text-amber-600" />
                               <AlertDescription className="text-amber-800 dark:text-amber-200">
-                                Montant payé équivalent : <strong>{currencySymbol}{paymentAmountNum.toFixed(2)}</strong>.
-                                Reste à payer : <strong>{currencySymbol}{remainingBalance.toFixed(2)}</strong>
+                                Montant payé équivalent : <strong>{currencySymbol}{paymentAmountNum.toFixed(decimalsSelected)}</strong>.
+                                Reste à payer : <strong>{currencySymbol}{remainingBalance.toFixed(decimalsSelected)}</strong>
                               </AlertDescription>
                             </Alert>
                           )}
@@ -858,6 +941,20 @@ export default function CheckoutPage() {
                               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                               <AlertDescription className="text-emerald-800 dark:text-emerald-200">
                                 Paiement complet, aucun reste à payer.
+                              </AlertDescription>
+                            </Alert>
+                          )}
+                        </div>
+                      )}
+
+                      {showPaymentInputs && useSplitPayment && (
+                        <div className="mt-2">
+                          {paymentAmountNum > 0 && paymentAmountNum < grandTotal && (
+                            <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
+                              <Info className="h-4 w-4 text-amber-600" />
+                              <AlertDescription className="text-amber-800 dark:text-amber-200">
+                                Montant payé équivalent : <strong>{currencySymbol}{paymentAmountNum.toFixed(decimalsSelected)}</strong>.
+                                Reste à payer : <strong>{currencySymbol}{(grandTotal - paymentAmountNum).toFixed(decimalsSelected)}</strong>
                               </AlertDescription>
                             </Alert>
                           )}
@@ -1027,8 +1124,8 @@ export default function CheckoutPage() {
               ) : (
                 <>
                   {isSplitPayment
-                    ? `Valider paiement fractionné (${francSymbol}${francAmountNum.toFixed(2)} + ${dollarSymbol}${dollarAmountNum.toFixed(2)})`
-                    : `${isFullPayment ? "Paiement complet" : "Valider le paiement partiel"} - ${currencySymbol}${paymentAmountNum.toFixed(2)}`}
+                    ? `Valider paiement fractionné (${francSymbol}${francAmountNum.toFixed(currencyDecimals(francCurrency))} + ${dollarSymbol}${dollarAmountNum.toFixed(currencyDecimals(dollarCurrency))})`
+                    : `${isFullPayment ? "Paiement complet" : "Valider le paiement partiel"} - ${currencySymbol}${paymentAmountNum.toFixed(decimalsSelected)}`}
                 </>
               )}
             </Button>
