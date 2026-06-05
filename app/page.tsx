@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
@@ -77,6 +78,7 @@ type SaleLine = {
   id: number
   quantite: number
   prix_vente: string
+  devise?: { id?: number; code?: string; symbole?: string }
 }
 
 type Sale = {
@@ -89,6 +91,8 @@ type Sale = {
   vendeur?: SaleVendor
   client?: SaleClient
   lignes: SaleLine[]
+  reste_a_payer?: number
+  deviseVente?: { id?: number; code?: string; symbole?: string }
 }
 
 function slugify(value: string) {
@@ -249,6 +253,170 @@ export default function POSPage() {
     } catch (error) {
       setSalesError(error instanceof Error ? error.message : "Impossible d'annuler cette vente.")
     }
+  }
+  const [showPayDialog, setShowPayDialog] = useState(false)
+  const [selectedSaleToPay, setSelectedSaleToPay] = useState<Sale | null>(null)
+  const [paymentsToMake, setPaymentsToMake] = useState<Array<{ devise_id: string; montant: string }>>([])
+  const [paymentFormError, setPaymentFormError] = useState("")
+  const [isSavingPayment, setIsSavingPayment] = useState(false)
+  const [devisesList, setDevisesList] = useState<Array<{ id: number; code?: string; symbole?: string }>>([])
+  const [rateByPair, setRateByPair] = useState<Record<string, number>>({})
+  const [rateInfoByPair, setRateInfoByPair] = useState<Record<string, string>>({})
+
+  function makeRateKey(sourceCurrencyId: number, targetCurrencyId: number) {
+    return `${sourceCurrencyId}-${targetCurrencyId}`
+  }
+
+  async function resolveRate(sourceCurrencyId?: number, targetCurrencyId?: number, date?: string) {
+    if (!sourceCurrencyId || !targetCurrencyId) return NaN
+    if (sourceCurrencyId === targetCurrencyId) return 1
+
+    const dateParam = date ? `&date=${encodeURIComponent(date)}` : ''
+
+    try {
+      const response = await backendRequest<{ status?: string; data?: { valeur?: string } }>(`/taux/actif?devise_source=${sourceCurrencyId}&devise_but=${targetCurrencyId}${dateParam}`)
+      const direct = Number(response.data?.valeur)
+      if (Number.isFinite(direct) && direct > 0) return direct
+      throw new Error('Taux invalide')
+    } catch (e) {
+      const reverseResponse = await backendRequest<{ status?: string; data?: { valeur?: string } }>(`/taux/actif?devise_source=${targetCurrencyId}&devise_but=${sourceCurrencyId}${dateParam}`)
+      const reverse = Number(reverseResponse.data?.valeur)
+      if (!Number.isFinite(reverse) || reverse <= 0) throw new Error('Taux introuvable')
+      return 1 / reverse
+    }
+  }
+
+  const handlePayDebt = async (sale: Sale) => {
+    if (!sale || Number(sale.reste_a_payer ?? 0) <= 0) {
+      alert("Aucune dette à payer pour cette vente.")
+      return
+    }
+
+    try {
+      const devRes = await backendRequest<{ data: Array<{ id: number; code?: string; symbole?: string }> }>(`/devises?per_page=all`)
+      const devises = devRes.data ?? []
+
+      setDevisesList(devises)
+
+      if (devises.length === 0) {
+        setPaymentFormError('Aucune devise disponible.')
+        return
+      }
+
+      const defaultDev = String(sale.deviseVente?.id ?? devises[0].id ?? "")
+      setRateByPair({})
+      setRateInfoByPair({})
+      setPaymentsToMake([{ devise_id: defaultDev, montant: String(Number(sale.reste_a_payer ?? 0).toFixed(2)) }])
+      setSelectedSaleToPay(sale)
+      setPaymentFormError("")
+      setShowPayDialog(true)
+    } catch (err: unknown) {
+      setPaymentFormError(err instanceof Error ? err.message : 'Erreur lors de la récupération des devises')
+    }
+  }
+
+  // Load needed rates whenever the dialog opens or payments/devise change
+  useEffect(() => {
+    let cancelled = false
+
+    const loadRates = async () => {
+      if (!showPayDialog || !selectedSaleToPay) return
+
+      const saleDevId = Number(selectedSaleToPay?.deviseVente?.id ?? selectedSaleToPay?.lignes?.[0]?.devise?.id ?? 0)
+      const neededPairs: Array<[number, number]> = []
+
+      for (const p of paymentsToMake) {
+        const payDevId = Number(p.devise_id)
+        if (!payDevId || !saleDevId) continue
+        const key = makeRateKey(payDevId, saleDevId)
+        if (rateByPair[key] === undefined) {
+          neededPairs.push([payDevId, saleDevId])
+        }
+      }
+
+      if (neededPairs.length === 0) return
+
+      const nextRates: Record<string, number> = {}
+      const nextInfo: Record<string, string> = {}
+      try {
+        for (const [src, tgt] of neededPairs) {
+          try {
+            const dateParam = selectedSaleToPay?.date ? `&date=${encodeURIComponent(selectedSaleToPay.date)}` : ''
+            const directResp = await backendRequest<{ status?: string; data?: { valeur?: string } }>(`/taux/actif?devise_source=${src}&devise_but=${tgt}${dateParam}`)
+            const directVal = Number(directResp.data?.valeur)
+            const key = makeRateKey(src, tgt)
+            if (Number.isFinite(directVal) && directVal > 0) {
+              nextRates[key] = directVal
+              nextInfo[key] = `1 ${devisesList.find(d => d.id === src)?.code ?? src} = ${directVal} ${devisesList.find(d => d.id === tgt)?.code ?? tgt}`
+              continue
+            }
+
+            const reverseResp = await backendRequest<{ status?: string; data?: { valeur?: string } }>(`/taux/actif?devise_source=${tgt}&devise_but=${src}${dateParam}`)
+            const reverseVal = Number(reverseResp.data?.valeur)
+            if (Number.isFinite(reverseVal) && reverseVal > 0) {
+              nextRates[key] = 1 / reverseVal
+              nextInfo[key] = `1 ${devisesList.find(d => d.id === src)?.code ?? src} = ${(1 / reverseVal).toFixed(8)} ${devisesList.find(d => d.id === tgt)?.code ?? tgt} (inverse)`
+            }
+          } catch (e) {
+            // leave undefined
+          }
+        }
+
+        if (!cancelled) {
+          setRateByPair(prev => ({ ...prev, ...nextRates }))
+          setRateInfoByPair(prev => ({ ...prev, ...nextInfo }))
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    void loadRates()
+
+    return () => { cancelled = true }
+  }, [showPayDialog, selectedSaleToPay, paymentsToMake])
+
+  // When user changes payment devise, auto-convert the amount to the new currency
+  const handlePaymentDeviseChange = async (idx: number, newDeviseId: string) => {
+    const newPayDevId = Number(newDeviseId)
+    const saleDevId = Number(selectedSaleToPay?.deviseVente?.id ?? selectedSaleToPay?.lignes?.[0]?.devise?.id ?? 0)
+
+    let rate: number | undefined = rateByPair[makeRateKey(newPayDevId, saleDevId)]
+
+    if (rate === undefined && newPayDevId && saleDevId && newPayDevId !== saleDevId) {
+      try {
+        const dateParam = selectedSaleToPay?.date ? `&date=${encodeURIComponent(selectedSaleToPay.date)}` : ''
+        const directResp = await backendRequest<{ status?: string; data?: { valeur?: string } }>(`/taux/actif?devise_source=${newPayDevId}&devise_but=${saleDevId}${dateParam}`)
+        const directVal = Number(directResp.data?.valeur)
+        const key = makeRateKey(newPayDevId, saleDevId)
+        if (Number.isFinite(directVal) && directVal > 0) {
+          rate = directVal
+          setRateByPair(prev => ({ ...prev, [key]: rate! }))
+          setRateInfoByPair(prev => ({ ...prev, [key]: `1 ${devisesList.find(d => d.id === newPayDevId)?.code ?? newPayDevId} = ${directVal} ${devisesList.find(d => d.id === saleDevId)?.code ?? saleDevId}` }))
+        } else {
+          const reverseResp = await backendRequest<{ status?: string; data?: { valeur?: string } }>(`/taux/actif?devise_source=${saleDevId}&devise_but=${newPayDevId}${dateParam}`)
+          const reverseVal = Number(reverseResp.data?.valeur)
+          if (Number.isFinite(reverseVal) && reverseVal > 0) {
+            rate = 1 / reverseVal
+            setRateByPair(prev => ({ ...prev, [key]: rate! }))
+            setRateInfoByPair(prev => ({ ...prev, [key]: `1 ${devisesList.find(d => d.id === newPayDevId)?.code ?? newPayDevId} = ${(1 / reverseVal).toFixed(8)} ${devisesList.find(d => d.id === saleDevId)?.code ?? saleDevId} (inverse)` }))
+          }
+        }
+      } catch { /* leave undefined */ }
+    }
+
+    // montant_payment = reste_a_payer / rate(payment→sale)
+    const resteAPayer = Number(selectedSaleToPay?.reste_a_payer ?? 0)
+    let newMontant: string
+    if (!newPayDevId || newPayDevId === saleDevId) {
+      newMontant = resteAPayer.toFixed(2)
+    } else if (rate !== undefined && rate > 0) {
+      newMontant = (resteAPayer / rate).toFixed(2)
+    } else {
+      newMontant = paymentsToMake[idx]?.montant ?? ''
+    }
+
+    setPaymentsToMake(prev => prev.map((r, i) => i === idx ? { ...r, devise_id: newDeviseId, montant: newMontant } : r))
   }
 
   useEffect(() => {
@@ -556,7 +724,13 @@ export default function POSPage() {
                                     {cancelable ? "Annulable" : "Trop tard"}
                                   </Badge>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="flex gap-2">
+                                  {Number(sale.reste_a_payer ?? 0) > 0 && (
+                                    <Button variant="secondary" size="sm" className="h-8" onClick={() => void handlePayDebt(sale)}>
+                                      Payer dette
+                                    </Button>
+                                  )}
+
                                   <Button
                                     variant="destructive"
                                     size="sm"
@@ -581,6 +755,87 @@ export default function POSPage() {
               </Card>
             </div>
           </TabsContent>
+      
+          <Dialog open={showPayDialog} onOpenChange={o => { if (!o) { setShowPayDialog(false); setSelectedSaleToPay(null); setPaymentsToMake([]); setPaymentFormError("") } }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Payer la dette — {selectedSaleToPay?.code ?? ''}</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={async (e) => {
+                e.preventDefault()
+                if (!selectedSaleToPay) return
+
+                const payloadPayments = paymentsToMake
+                  .map(p => ({ devise_id: Number(p.devise_id), montant: Number(p.montant) }))
+                  .filter(p => Number.isFinite(p.devise_id) && !Number.isNaN(p.montant) && p.montant > 0)
+
+                if (payloadPayments.length === 0) { setPaymentFormError('Saisis au moins un paiement valide'); return }
+
+                setIsSavingPayment(true)
+                try {
+                  await backendRequest(`/ventes/${selectedSaleToPay.id}/paiements`, { method: 'POST', body: JSON.stringify({ paiements: payloadPayments }) })
+                  void fetchSales()
+                  setShowPayDialog(false)
+                  setSelectedSaleToPay(null)
+                  setPaymentsToMake([])
+                } catch (ex: unknown) {
+                  setPaymentFormError(ex instanceof Error ? ex.message : 'Erreur lors du paiement')
+                } finally { setIsSavingPayment(false) }
+              }} className="space-y-4">
+                {(paymentsToMake.length === 0 ? [{ devise_id: String(devisesList[0]?.id ?? ''), montant: '' }] : paymentsToMake).map((p, idx) => (
+                  <div key={idx} className="grid grid-cols-3 gap-3 items-end">
+                    <div className="col-span-2">
+                      <Label>Devise</Label>
+                      <Select value={p.devise_id} onValueChange={v => { void handlePaymentDeviseChange(idx, v) }}>
+                        <SelectTrigger><SelectValue placeholder="Choisir une devise" /></SelectTrigger>
+                        <SelectContent>
+                          {devisesList.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.symbole} {d.code}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Montant</Label>
+                        <Input type="number" step="0.01" value={p.montant} onChange={e => setPaymentsToMake(prev => prev.map((r, i) => i === idx ? { ...r, montant: e.target.value } : r))} />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {
+                            (() => {
+                              const saleDevId = Number(selectedSaleToPay?.deviseVente?.id ?? selectedSaleToPay?.lignes?.[0]?.devise?.id ?? 0)
+                              const payDevId = Number(p.devise_id)
+                              const key = makeRateKey(payDevId, saleDevId)
+                              const rate = rateByPair[key]
+                              const info = rateInfoByPair[key]
+
+                              if (!saleDevId || !payDevId) return ''
+                              if (rate === undefined) return 'Taux: ...'
+
+                              const amt = Number(p.montant) || 0
+                              const converted = (amt * rate)
+                              return `${converted.toFixed(2)} ${selectedSaleToPay?.deviseVente?.symbole ?? ''}${info ? ' — ' + info : ''}`
+                            })()
+                          }
+                        </p>
+                    </div>
+                    <div className="col-span-3 flex gap-2">
+                      <div className="ml-auto">
+                        {paymentsToMake.length > 1 && (
+                          <Button variant="destructive" onClick={() => setPaymentsToMake(prev => prev.filter((_, i) => i !== idx))}>Supprimer</Button>
+                        )}
+                        {idx === paymentsToMake.length - 1 && paymentsToMake.length < 2 && (
+                          <Button className="ml-2" onClick={() => setPaymentsToMake(prev => [...prev, { devise_id: String(devisesList[0]?.id ?? ''), montant: '' }])}>Ajouter paiement</Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {paymentFormError && <div className="text-sm text-destructive">{paymentFormError}</div>}
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => { setShowPayDialog(false); setPaymentsToMake([]); setSelectedSaleToPay(null) }}>Annuler</Button>
+                  <Button type="submit" disabled={isSavingPayment}>{isSavingPayment ? 'En cours...' : 'Payer'}</Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </Tabs>
       </main>
 

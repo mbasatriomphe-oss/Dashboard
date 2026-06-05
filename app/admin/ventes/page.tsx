@@ -44,6 +44,7 @@ interface Vente {
   id_vendeur: number
   id_client: number
   devise_vente_id?: number | null
+  deviseVente?: Devise | null
   montant_total?: number | string | null
   montant_paye?: number | string | null
   reste_a_payer?: number | string | null
@@ -84,16 +85,52 @@ export default function VentesPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [vendeurs, setVendeurs] = useState<Vendeur[]>([])
   const [devises, setDevises] = useState<Devise[]>([])
+  const [rateByPair, setRateByPair] = useState<Record<string, number>>({})
+  const [rateInfoByPair, setRateInfoByPair] = useState<Record<string, string>>({})
+
+  function makeRateKey(sourceCurrencyId: number, targetCurrencyId: number) {
+    return `${sourceCurrencyId}-${targetCurrencyId}`
+  }
+
+  async function resolveRate(sourceCurrencyId?: number, targetCurrencyId?: number, date?: string) {
+    if (!sourceCurrencyId || !targetCurrencyId) return NaN
+    if (sourceCurrencyId === targetCurrencyId) return 1
+
+    const dateParam = date ? `&date=${encodeURIComponent(date)}` : ''
+
+    try {
+      const response = await backendRequest(`/taux/actif?devise_source=${sourceCurrencyId}&devise_but=${targetCurrencyId}${dateParam}`)
+      const direct = Number(response.data?.valeur)
+      if (Number.isFinite(direct) && direct > 0) return direct
+      throw new Error('Taux invalide')
+    } catch (e) {
+      const reverseResponse = await backendRequest(`/taux/actif?devise_source=${targetCurrencyId}&devise_but=${sourceCurrencyId}${dateParam}`)
+      const reverse = Number(reverseResponse.data?.valeur)
+      if (!Number.isFinite(reverse) || reverse <= 0) throw new Error('Taux introuvable')
+      return 1 / reverse
+    }
+  }
   const [stocks, setStocks] = useState<StockProduit[]>([])
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState("")
   const [histSearch, setHistSearch] = useState("")
+  const [paymentCurrency, setPaymentCurrency] = useState("all")
+  const [filterClient, setFilterClient] = useState("all")
+  const [filterVendeur, setFilterVendeur] = useState("all")
+  const [filterDate, setFilterDate] = useState("")
   const [prodSearch, setProdSearch] = useState("")
   const [showDialog, setShowDialog] = useState(false)
   const [editing, setEditing] = useState<Vente | null>(null)
   const [selected, setSelected] = useState<Vente | null>(null)
+  const [showPayDialog, setShowPayDialog] = useState(false)
+  const [paymentsToMake, setPaymentsToMake] = useState<Array<{ devise_id: string; montant: string }>>([])
+
+  const saleCurrencySymbol = (v: Vente) => {
+    return v.deviseVente?.symbole ?? v.lignes?.[0]?.devise?.symbole ?? "$"
+  }
+  const [showDetailsDialog, setShowDetailsDialog] = useState(false)
   const [formError, setFormError] = useState("")
 
   const [formDate, setFormDate] = useState(getToday())
@@ -119,12 +156,16 @@ export default function VentesPage() {
     })))
   }, [])
 
-  const fetchVentes = useCallback(async (q = "") => {
+  const fetchVentes = useCallback(async (q = "", paymentFilter = "", clientFilter = "", dateFilter = "", vendeurFilter = "") => {
     setIsLoading(true)
     setError("")
     try {
       const params = new URLSearchParams({ per_page: "0" })
       if (q.trim()) params.set("search", q.trim())
+      if (paymentFilter && paymentFilter !== 'all') params.set('payment_currency', paymentFilter)
+      if (clientFilter && clientFilter !== 'all') params.set('id_client', clientFilter)
+      if (vendeurFilter && vendeurFilter !== 'all') params.set('id_vendeur', vendeurFilter)
+      if (dateFilter) params.set('date', dateFilter)
       const res = await backendRequest<{ data: Vente[] }>(`/ventes?${params}`)
       setVentes((res.data ?? []).map(v => ({ ...v, lignes: v.lignes ?? [] })))
     } catch (e: unknown) {
@@ -135,13 +176,106 @@ export default function VentesPage() {
   }, [])
 
   useEffect(() => {
-    Promise.all([fetchLookups(), fetchVentes()])
-  }, [fetchLookups, fetchVentes])
+    Promise.all([fetchLookups(), fetchVentes("", paymentCurrency, filterClient, filterDate, filterVendeur)])
+  }, [fetchLookups, fetchVentes, paymentCurrency, filterClient, filterDate, filterVendeur])
 
   useEffect(() => {
-    const t = setTimeout(() => fetchVentes(histSearch), 300)
+    const t = setTimeout(() => fetchVentes(histSearch, paymentCurrency, filterClient, filterDate, filterVendeur), 300)
     return () => clearTimeout(t)
-  }, [histSearch, fetchVentes])
+  }, [histSearch, fetchVentes, paymentCurrency, filterClient, filterDate, filterVendeur])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadRates = async () => {
+      if (!showPayDialog || !selected) return
+      const saleDevId = Number(selected.deviseVente?.id ?? selected.lignes?.[0]?.devise?.id ?? 0)
+      const needed: Array<[number, number]> = []
+      for (const p of paymentsToMake) {
+        const payDevId = Number(p.devise_id)
+        if (!payDevId || !saleDevId) continue
+        const key = makeRateKey(payDevId, saleDevId)
+        if (rateByPair[key] === undefined) needed.push([payDevId, saleDevId])
+      }
+      if (needed.length === 0) return
+      const next: Record<string, number> = {}
+      const nextInfo: Record<string, string> = {}
+      for (const [src, tgt] of needed) {
+        try {
+          const dateParam = selected?.date ? `&date=${encodeURIComponent(selected.date)}` : ''
+          const directResp = await backendRequest(`/taux/actif?devise_source=${src}&devise_but=${tgt}${dateParam}`)
+          const directVal = Number(directResp.data?.valeur)
+          const key = makeRateKey(src, tgt)
+          if (Number.isFinite(directVal) && directVal > 0) {
+            next[key] = directVal
+            nextInfo[key] = `1 ${devises.find(d => d.id === src)?.code ?? src} = ${directVal} ${devises.find(d => d.id === tgt)?.code ?? tgt}`
+            continue
+          }
+
+          const reverseResp = await backendRequest(`/taux/actif?devise_source=${tgt}&devise_but=${src}${dateParam}`)
+          const reverseVal = Number(reverseResp.data?.valeur)
+          if (Number.isFinite(reverseVal) && reverseVal > 0) {
+            next[key] = 1 / reverseVal
+            nextInfo[key] = `1 ${devises.find(d => d.id === src)?.code ?? src} = ${ (1 / reverseVal).toFixed(8) } ${devises.find(d => d.id === tgt)?.code ?? tgt } (inverse)`
+          }
+        } catch (e) {
+          // leave undefined
+        }
+      }
+
+      if (!cancelled) {
+        if (Object.keys(next).length > 0) setRateByPair(prev => ({ ...prev, ...next }))
+        if (Object.keys(nextInfo).length > 0) setRateInfoByPair(prev => ({ ...prev, ...nextInfo }))
+      }
+    }
+
+    void loadRates()
+    return () => { cancelled = true }
+  }, [showPayDialog, selected, paymentsToMake])
+
+  // When user changes payment devise, auto-convert the amount to the new currency
+  const handlePaymentDeviseChange = async (idx: number, newDeviseId: string) => {
+    const newPayDevId = Number(newDeviseId)
+    const saleDevId = Number(selected?.deviseVente?.id ?? selected?.lignes?.[0]?.devise?.id ?? 0)
+
+    // Look up or fetch rate: newPayDev → saleDev
+    let rate: number | undefined = rateByPair[makeRateKey(newPayDevId, saleDevId)]
+
+    if (rate === undefined && newPayDevId && saleDevId && newPayDevId !== saleDevId) {
+      try {
+        const dateParam = selected?.date ? `&date=${encodeURIComponent(selected.date)}` : ''
+        const directResp = await backendRequest(`/taux/actif?devise_source=${newPayDevId}&devise_but=${saleDevId}${dateParam}`)
+        const directVal = Number(directResp.data?.valeur)
+        const key = makeRateKey(newPayDevId, saleDevId)
+        if (Number.isFinite(directVal) && directVal > 0) {
+          rate = directVal
+          setRateByPair(prev => ({ ...prev, [key]: rate! }))
+          setRateInfoByPair(prev => ({ ...prev, [key]: `1 ${devises.find(d => d.id === newPayDevId)?.code ?? newPayDevId} = ${directVal} ${devises.find(d => d.id === saleDevId)?.code ?? saleDevId}` }))
+        } else {
+          const reverseResp = await backendRequest(`/taux/actif?devise_source=${saleDevId}&devise_but=${newPayDevId}${dateParam}`)
+          const reverseVal = Number(reverseResp.data?.valeur)
+          if (Number.isFinite(reverseVal) && reverseVal > 0) {
+            rate = 1 / reverseVal
+            setRateByPair(prev => ({ ...prev, [key]: rate! }))
+            setRateInfoByPair(prev => ({ ...prev, [key]: `1 ${devises.find(d => d.id === newPayDevId)?.code ?? newPayDevId} = ${(1 / reverseVal).toFixed(8)} ${devises.find(d => d.id === saleDevId)?.code ?? saleDevId} (inverse)` }))
+          }
+        }
+      } catch { /* leave undefined */ }
+    }
+
+    // Compute suggested amount in the new payment currency:
+    // montant_payment × rate(payment→sale) = reste_a_payer  →  montant_payment = reste_a_payer / rate(payment→sale)
+    const resteAPayer = Number(selected?.reste_a_payer ?? 0)
+    let newMontant: string
+    if (!newPayDevId || newPayDevId === saleDevId) {
+      newMontant = resteAPayer.toFixed(2)
+    } else if (rate !== undefined && rate > 0) {
+      newMontant = (resteAPayer / rate).toFixed(2)
+    } else {
+      newMontant = paymentsToMake[idx]?.montant ?? ''
+    }
+
+    setPaymentsToMake(prev => prev.map((r, i) => i === idx ? { ...r, devise_id: newDeviseId, montant: newMontant } : r))
+  }
 
   const openCreate = () => {
     setEditing(null)
@@ -214,7 +348,7 @@ export default function VentesPage() {
         })
         setVentes(prev => [{ ...res.data, lignes: res.data.lignes ?? [] }, ...prev])
         setShowDialog(false)
-        fetchVentes()
+        fetchVentes("", paymentCurrency, filterClient, filterDate, filterVendeur)
       } catch (ex: unknown) {
         setFormError(ex instanceof Error ? ex.message : "Erreur lors de la création")
       } finally {
@@ -255,7 +389,7 @@ export default function VentesPage() {
     return ventes.filter(v =>
       v.code.toLowerCase().includes(q) ||
       clientName(v.client).toLowerCase().includes(q) ||
-      v.vendeur?.nom?.toLowerCase().includes(q)
+      ((`${v.vendeur?.prenom ?? ''} ${v.vendeur?.nom ?? ''}`).toLowerCase().includes(q))
     )
   }, [ventes, histSearch])
 
@@ -301,7 +435,7 @@ export default function VentesPage() {
             <p className="text-muted-foreground">Enregistrez les ventes et gérez le stock FIFO automatiquement.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => fetchVentes(histSearch)} disabled={isLoading}>
+            <Button variant="outline" onClick={() => fetchVentes(histSearch, paymentCurrency, filterClient, filterDate, filterVendeur)} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />Actualiser
             </Button>
             <Button onClick={openCreate}>
@@ -343,9 +477,49 @@ export default function VentesPage() {
         <TabsContent value="history" className="space-y-4">
           <Card>
             <CardContent className="p-4">
-              <div className="relative">
+              <div className="relative flex items-center gap-3">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input className="pl-9" placeholder="Rechercher par code, client, vendeur..." value={histSearch} onChange={e => setHistSearch(e.target.value)} />
+                <div className="ml-auto flex items-center gap-3">
+                  <div className="w-40">
+                    <Label className="text-xs mb-1 block">Devise paiement</Label>
+                    <Select value={paymentCurrency} onValueChange={v => { setPaymentCurrency(v); fetchVentes(histSearch, v, filterClient, filterDate, filterVendeur) }}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous</SelectItem>
+                      <SelectItem value="franc">Franc</SelectItem>
+                      <SelectItem value="dollar">Dollar</SelectItem>
+                      <SelectItem value="both">Les deux</SelectItem>
+                    </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-56">
+                    <Label className="text-xs mb-1 block">Client</Label>
+                    <Select value={filterClient} onValueChange={v => { setFilterClient(v); fetchVentes(histSearch, paymentCurrency, v, filterDate, filterVendeur) }}>
+                      <SelectTrigger><SelectValue placeholder="Tous" /></SelectTrigger>
+                      <SelectContent className="max-h-60 overflow-y-auto">
+                        <SelectItem value="all">Tous</SelectItem>
+                        {clients.map(c => <SelectItem key={c.id} value={String(c.id)}>{clientName(c)}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-56">
+                    <Label className="text-xs mb-1 block">Vendeur</Label>
+                    <Select value={filterVendeur} onValueChange={v => { setFilterVendeur(v); fetchVentes(histSearch, paymentCurrency, filterClient, filterDate, v) }}>
+                      <SelectTrigger><SelectValue placeholder="Tous" /></SelectTrigger>
+                      <SelectContent className="max-h-60 overflow-y-auto">
+                        <SelectItem value="all">Tous</SelectItem>
+                        {vendeurs.map(v => <SelectItem key={v.id} value={String(v.id)}>{v.prenom} {v.nom}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs mb-1 block">Date</Label>
+                    <Input type="date" value={filterDate} onChange={e => { setFilterDate(e.target.value); fetchVentes(histSearch, paymentCurrency, filterClient, e.target.value, filterVendeur) }} />
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -385,16 +559,16 @@ export default function VentesPage() {
                           <TableCell>{clientName(v.client)}</TableCell>
                           <TableCell>{v.vendeur ? `${v.vendeur.prenom} ${v.vendeur.nom}` : `#${v.id_vendeur}`}</TableCell>
                           <TableCell><Badge variant="secondary">{v.lignes?.length ?? 0}</Badge></TableCell>
-                          <TableCell className="font-semibold text-emerald-600">{montant.toFixed(2)}</TableCell>
-                          <TableCell className="font-semibold text-blue-600">{montantPaye.toFixed(2)}</TableCell>
-                          <TableCell className={reste > 0 ? "font-semibold text-rose-600" : "font-semibold text-emerald-600"}>{reste.toFixed(2)}</TableCell>
+                          <TableCell className="font-semibold text-emerald-600">{saleCurrencySymbol(v)} {montant.toFixed(2)}</TableCell>
+                          <TableCell className="font-semibold text-blue-600">{saleCurrencySymbol(v)} {montantPaye.toFixed(2)}</TableCell>
+                          <TableCell className={reste > 0 ? "font-semibold text-rose-600" : "font-semibold text-emerald-600"}>{saleCurrencySymbol(v)} {reste.toFixed(2)}</TableCell>
                           <TableCell>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => setSelected(v)}><Eye className="mr-2 h-4 w-4" />Détails</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setSelected(v); setShowDetailsDialog(true) }}><Eye className="mr-2 h-4 w-4" />Détails</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => openEdit(v)}><Edit className="mr-2 h-4 w-4" />Modifier</DropdownMenuItem>
                                 <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(v)}><Trash2 className="mr-2 h-4 w-4" />Supprimer</DropdownMenuItem>
                               </DropdownMenuContent>
@@ -415,16 +589,28 @@ export default function VentesPage() {
             <Card>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" />Détails — {selected.code}</CardTitle>
+                    <CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" />Détails — {selected.code}</CardTitle>
                   <Badge variant="secondary">{selected.lignes?.length ?? 0} ligne(s)</Badge>
                 </div>
                 <div className="text-sm text-muted-foreground space-y-1 pt-1">
                   <p>Client: <span className="font-medium text-foreground">{clientName(selected.client)}</span></p>
                   <p>Vendeur: <span className="font-medium text-foreground">{selected.vendeur ? `${selected.vendeur.prenom} ${selected.vendeur.nom}` : "—"}</span></p>
                   <p>Date: <span className="font-medium text-foreground">{selected.date}</span></p>
-                  <p>Payé: <span className="font-medium text-foreground">{fmt(selected.montant_paye ?? 0)}</span></p>
-                  <p>Reste à payer: <span className={`font-medium ${Number(selected.reste_a_payer ?? 0) > 0 ? "text-rose-600" : "text-foreground"}`}>{fmt(selected.reste_a_payer ?? 0)}</span></p>
+                  <p>Payé: <span className="font-medium text-foreground">{saleCurrencySymbol(selected)} {fmt(selected.montant_paye ?? 0)}</span></p>
+                  <p>Reste à payer: <span className={`font-medium ${Number(selected.reste_a_payer ?? 0) > 0 ? "text-rose-600" : "text-foreground"}`}>{saleCurrencySymbol(selected)} {fmt(selected.reste_a_payer ?? 0)}</span></p>
                 </div>
+                {Number(selected.reste_a_payer ?? 0) > 0 && (
+                  <div className="mt-3 flex gap-2">
+                    <Button onClick={() => {
+                      const defaultDev = String(selected.deviseVente?.id ?? devises[0]?.id ?? "")
+                      setRateByPair({})
+                      setRateInfoByPair({})
+                      setFormError("")
+                      setPaymentsToMake([{ devise_id: defaultDev, montant: String(Number(selected.reste_a_payer ?? 0).toFixed(2)) }])
+                      setShowPayDialog(true)
+                    }} variant="secondary">Payer dette</Button>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="p-0">
                 <Table>
@@ -598,6 +784,169 @@ export default function VentesPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPayDialog} onOpenChange={o => !o && setShowPayDialog(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Payer la dette — {selected?.code ?? ''}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={async (e) => {
+            e.preventDefault()
+            if (!selected) return
+            const saleDevId = Number(selected.deviseVente?.id ?? selected.lignes?.[0]?.devise?.id ?? 0)
+
+            const payloadPayments = paymentsToMake
+              .map(p => ({ devise_id: Number(p.devise_id), montant: Number(p.montant) }))
+              .filter(p => Number.isFinite(p.devise_id) && !Number.isNaN(p.montant) && p.montant > 0)
+
+            if (payloadPayments.length === 0) { setFormError('Saisis au moins un paiement valide'); return }
+
+            // Validate conversion availability and total converted <= reste_a_payer
+            let convertedTotal = 0
+            for (const p of payloadPayments) {
+              const key = makeRateKey(p.devise_id, saleDevId)
+              const rate = rateByPair[key]
+              if (rate === undefined) { setFormError(`Taux introuvable pour la paire devise ${p.devise_id} → ${saleDevId}`); return }
+              convertedTotal += p.montant * rate
+            }
+
+            const reste = Number(selected.reste_a_payer ?? 0)
+            if (convertedTotal - reste > 0.01) { setFormError('Le total des paiements convertis dépasse le reste à payer'); return }
+
+            setIsSaving(true)
+            try {
+              await backendRequest(`/ventes/${selected.id}/paiements`, { method: 'POST', body: JSON.stringify({ paiements: payloadPayments }) })
+              // refresh
+              fetchVentes(histSearch, paymentCurrency, filterClient, filterDate, filterVendeur)
+              setShowPayDialog(false)
+              setSelected(null)
+              setPaymentsToMake([])
+            } catch (ex: unknown) {
+              setFormError(ex instanceof Error ? ex.message : 'Erreur lors du paiement')
+            } finally { setIsSaving(false) }
+          }} className="space-y-4">
+            {(paymentsToMake.length === 0 ? [{ devise_id: String(devises[0]?.id ?? ''), montant: '' }] : paymentsToMake).map((p, idx) => (
+              <div key={idx} className="grid grid-cols-3 gap-3 items-end">
+                <div className="col-span-2">
+                  <Label>Devise</Label>
+                  <Select value={p.devise_id} onValueChange={v => { void handlePaymentDeviseChange(idx, v) }}>
+                    <SelectTrigger><SelectValue placeholder="Choisir une devise" /></SelectTrigger>
+                    <SelectContent>
+                      {devises.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.symbole} {d.code}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Montant</Label>
+                  <Input type="number" step="0.01" value={p.montant} onChange={e => setPaymentsToMake(prev => prev.map((r, i) => i === idx ? { ...r, montant: e.target.value } : r))} />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {
+                      (() => {
+                        const saleDevId = Number(selected?.deviseVente?.id ?? selected?.lignes?.[0]?.devise?.id ?? 0)
+                        const payDevId = Number(p.devise_id)
+                        if (!saleDevId || !payDevId) return ''
+                        const key = makeRateKey(payDevId, saleDevId)
+                        const rate = rateByPair[key]
+                        const info = rateInfoByPair[key]
+                        if (rate === undefined) return 'Taux: ...'
+                        const amt = Number(p.montant) || 0
+                        const converted = amt * rate
+                        return `${converted.toFixed(2)} ${selected?.deviseVente?.symbole ?? ''}${info ? ' — ' + info : ''}`
+                      })()
+                    }
+                  </p>
+                </div>
+                <div className="col-span-3 flex gap-2">
+                  <div className="ml-auto">
+                    {paymentsToMake.length > 1 && (
+                      <Button variant="destructive" onClick={() => setPaymentsToMake(prev => prev.filter((_, i) => i !== idx))}>Supprimer</Button>
+                    )}
+                    {idx === paymentsToMake.length - 1 && paymentsToMake.length < 2 && (
+                      <Button className="ml-2" onClick={() => setPaymentsToMake(prev => [...prev, { devise_id: String(devises[0]?.id ?? ''), montant: '' }])}>Ajouter paiement</Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {formError && <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{formError}</AlertDescription></Alert>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => { setShowPayDialog(false); setPaymentsToMake([]) }}>Annuler</Button>
+              <Button type="submit" disabled={isSaving}>{isSaving ? 'En cours...' : 'Payer'}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDetailsDialog} onOpenChange={o => { if (!o) { setShowDetailsDialog(false); setSelected(null) } }}>
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Détails de la vente {selected?.code ?? ''}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selected ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Client</p>
+                    <p className="font-medium">{clientName(selected.client)}</p>
+                    <p className="text-sm text-muted-foreground mt-2">Vendeur</p>
+                    <p className="font-medium">{selected.vendeur ? `${selected.vendeur.prenom} ${selected.vendeur.nom}` : '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Date</p>
+                    <p className="font-medium">{selected.date}</p>
+                    <p className="text-sm text-muted-foreground mt-2">Reste à payer</p>
+                    <p className={`font-medium ${Number(selected.reste_a_payer ?? 0) > 0 ? 'text-rose-600' : ''}`}>{fmt(selected.reste_a_payer ?? 0)}</p>
+                  </div>
+                </div>
+
+                <div className="overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Produit</TableHead>
+                        <TableHead>Quantité</TableHead>
+                        <TableHead>Prix vente</TableHead>
+                        <TableHead>Montant</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(selected.lignes ?? []).length === 0 ? (
+                        <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Aucune ligne</TableCell></TableRow>
+                      ) : (selected.lignes ?? []).map(l => (
+                        <TableRow key={l.id}>
+                          <TableCell>{l.produit?.nom ?? `#${l.id_produit}`}</TableCell>
+                          <TableCell>{l.quantite}</TableCell>
+                          <TableCell>{fmt(l.prix_vente)}</TableCell>
+                          <TableCell className="font-semibold text-emerald-600">{(Number(l.quantite) * Number(l.prix_vente)).toFixed(2)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  {Number(selected.reste_a_payer ?? 0) > 0 && (
+                    <Button onClick={() => {
+                      const defaultDev = String(selected.deviseVente?.id ?? devises[0]?.id ?? "")
+                      setRateByPair({})
+                      setRateInfoByPair({})
+                      setFormError("")
+                      setPaymentsToMake([{ devise_id: defaultDev, montant: String(Number(selected.reste_a_payer ?? 0).toFixed(2)) }])
+                      setShowPayDialog(true);
+                      setShowDetailsDialog(false);
+                    }}>Payer dette</Button>
+                  )}
+                  <Button variant="outline" onClick={() => { setShowDetailsDialog(false); setSelected(null) }}>Fermer</Button>
+                </div>
+              </>
+            ) : (
+              <div className="py-8 text-center">Aucune vente sélectionnée.</div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
