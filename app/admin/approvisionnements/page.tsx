@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { AlertCircle, CalendarDays, Edit, Loader2, MoreHorizontal, Package, Plus, RefreshCw, Search, Trash2, Boxes, Truck, X, Eye, Filter, ArrowUpDown, Layers, TrendingUp, DollarSign, History } from "lucide-react"
+import { AlertCircle, CalendarDays, Edit, Loader2, MoreHorizontal, Package, Plus, RefreshCw, Search, Trash2, Boxes, Truck, X, Eye, Filter, ArrowUpDown, Layers, TrendingUp, DollarSign, History, Save } from "lucide-react"
 import { backendRequest } from "@/app/services/backend"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -92,6 +92,255 @@ interface ProductSelection {
   id_devise: string
 }
 
+// Composant pour modifier la devise d'une ligne individuelle
+function EditSingleLigneDialog({ 
+  ligne, 
+  devises, 
+  open, 
+  onClose, 
+  onSave 
+}: { 
+  ligne: LigneRaw | null
+  devises: Devise[]
+  open: boolean
+  onClose: () => void
+  onSave: (id: number, id_devise: number) => Promise<void>
+}) {
+  const [selectedDevise, setSelectedDevise] = useState<string>("")
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (ligne) {
+      setSelectedDevise(String(ligne.id_devise))
+    }
+  }, [ligne])
+
+  const handleSave = async () => {
+    if (!ligne) return
+    setIsSaving(true)
+    try {
+      await onSave(ligne.id, Number(selectedDevise))
+      onClose()
+    } catch (error) {
+      console.error("Erreur lors de la modification", error)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Modifier la devise - {ligne?.produit?.nom}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2 rounded-lg bg-muted/50 p-4">
+            <div className="flex justify-between">
+              <span className="text-sm text-muted-foreground">Produit:</span>
+              <span className="font-medium">{ligne?.produit?.nom ?? `#${ligne?.id_produit}`}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-muted-foreground">Quantité:</span>
+              <span className="font-medium">{ligne?.quantite}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-muted-foreground">Prix unitaire:</span>
+              <span className="font-medium">{ligne?.prix_unitaire}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-muted-foreground">Prix vente:</span>
+              <span className="font-medium">{ligne?.prix_vente ?? "—"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-muted-foreground">Devise actuelle:</span>
+              <Badge variant="outline">{ligne?.devise?.code || `#${ligne?.id_devise}`}</Badge>
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label>Nouvelle devise *</Label>
+            <Select value={selectedDevise} onValueChange={setSelectedDevise}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choisir une devise" />
+              </SelectTrigger>
+              <SelectContent>
+                {devises.map(d => (
+                  <SelectItem key={d.id} value={String(d.id)}>
+                    {d.symbole} - {d.code} - {d.nom}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={onClose}>Annuler</Button>
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Enregistrer
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Composant pour modifier la devise de plusieurs produits
+function EditMultipleLignesDialog({ 
+  lignes, 
+  devises, 
+  open, 
+  onClose, 
+  onSaveMultiple 
+}: { 
+  lignes: LigneRaw[]
+  devises: Devise[]
+  open: boolean
+  onClose: () => void
+  onSaveMultiple: (updates: { id: number; id_devise: number }[]) => Promise<void>
+}) {
+  const [selectedDevise, setSelectedDevise] = useState<string>("")
+  const [selectedLignes, setSelectedLignes] = useState<Set<number>>(new Set())
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    // Par défaut, sélectionner toutes les lignes
+    if (lignes.length > 0) {
+      setSelectedLignes(new Set(lignes.map(l => l.id)))
+    }
+  }, [lignes])
+
+  const toggleLigne = (ligneId: number) => {
+    const newSelected = new Set(selectedLignes)
+    if (newSelected.has(ligneId)) {
+      newSelected.delete(ligneId)
+    } else {
+      newSelected.add(ligneId)
+    }
+    setSelectedLignes(newSelected)
+  }
+
+  const toggleAll = () => {
+    if (selectedLignes.size === lignes.length) {
+      setSelectedLignes(new Set())
+    } else {
+      setSelectedLignes(new Set(lignes.map(l => l.id)))
+    }
+  }
+
+  const handleSave = async () => {
+    if (selectedLignes.size === 0) {
+      alert("Veuillez sélectionner au moins un produit")
+      return
+    }
+    if (!selectedDevise) {
+      alert("Veuillez sélectionner une devise")
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      const updates = Array.from(selectedLignes).map(id => ({
+        id,
+        id_devise: Number(selectedDevise)
+      }))
+      await onSaveMultiple(updates)
+      onClose()
+    } catch (error) {
+      console.error("Erreur lors de la modification", error)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Modifier la devise pour plusieurs produits</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4 flex-1 overflow-y-auto">
+          <div className="space-y-2">
+            <Label>Nouvelle devise pour les produits sélectionnés *</Label>
+            <Select value={selectedDevise} onValueChange={setSelectedDevise}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choisir une devise" />
+              </SelectTrigger>
+              <SelectContent>
+                {devises.map(d => (
+                  <SelectItem key={d.id} value={String(d.id)}>
+                    {d.symbole} - {d.code} - {d.nom}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="rounded-lg border">
+            <div className="flex items-center justify-between p-4 border-b bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={selectedLignes.size === lignes.length}
+                  onCheckedChange={toggleAll}
+                />
+                <span className="font-medium">Sélectionner tout</span>
+              </div>
+              <Badge variant="secondary">{selectedLignes.size} produit(s) sélectionné(s)</Badge>
+            </div>
+            
+            <div className="max-h-[400px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12"></TableHead>
+                    <TableHead>Produit</TableHead>
+                    <TableHead>Quantité</TableHead>
+                    <TableHead>Prix unitaire</TableHead>
+                    <TableHead>Prix vente</TableHead>
+                    <TableHead>Devise actuelle</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lignes.map(ligne => (
+                    <TableRow key={ligne.id}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedLignes.has(ligne.id)}
+                          onCheckedChange={() => toggleLigne(ligne.id)}
+                        />
+                      </TableCell>
+                      <TableCell>{ligne.produit?.nom ?? `#${ligne.id_produit}`}</TableCell>
+                      <TableCell>{ligne.quantite}</TableCell>
+                      <TableCell>{ligne.prix_unitaire}</TableCell>
+                      <TableCell>{ligne.prix_vente ?? "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {ligne.devise?.code || `#${ligne.id_devise}`}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-4 border-t">
+          <Button variant="outline" onClick={onClose}>Annuler</Button>
+          <Button onClick={handleSave} disabled={isSaving || !selectedDevise}>
+            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Appliquer la devise à {selectedLignes.size} produit(s)
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 const getLocalDateValue = () => {
   const now = new Date()
   const year = now.getFullYear()
@@ -152,6 +401,11 @@ export default function ApprovisionnementsPage() {
   const [selectedApprovisionnement, setSelectedApprovisionnement] = useState<Approvisionnement | null>(null)
   const [historySearch, setHistorySearch] = useState("")
   const [showOnlyWithLines, setShowOnlyWithLines] = useState(false)
+  
+  // Nouveaux états pour l'édition de devise
+  const [editingLigne, setEditingLigne] = useState<LigneRaw | null>(null)
+  const [showMultipleEditDialog, setShowMultipleEditDialog] = useState(false)
+  const [isUpdatingDevise, setIsUpdatingDevise] = useState(false)
 
   const fetchLookups = useCallback(async () => {
     const [fournisseursRes, produitsRes, devisesRes, currentUserRes] = await Promise.all([
@@ -180,6 +434,115 @@ export default function ApprovisionnementsPage() {
       setIsLoading(false)
     }
   }, [])
+
+  // Fonction pour mettre à jour la devise d'une seule ligne
+  const handleUpdateSingleLigneDevise = async (ligneId: number, id_devise: number) => {
+    setIsUpdatingDevise(true)
+    try {
+      const response = await backendRequest<{ data: LigneRaw }>(`/lignes-approvisionnements/${ligneId}`, {
+        method: "PUT",
+        body: JSON.stringify({ id_devise }),
+      })
+      
+      // Mettre à jour l'affichage local
+      if (selectedApprovisionnement) {
+        const updatedLignes = selectedApprovisionnement.lignes.map(ligne =>
+          ligne.id === ligneId ? { 
+            ...ligne, 
+            id_devise, 
+            devise: devises.find(d => d.id === id_devise)
+          } : ligne
+        )
+        setSelectedApprovisionnement({
+          ...selectedApprovisionnement,
+          lignes: updatedLignes
+        })
+      }
+      
+      // Mettre à jour dans la liste principale
+      setApprovisionnements(prev => prev.map(appro => {
+        if (appro.id === selectedApprovisionnement?.id) {
+          return {
+            ...appro,
+            lignes: appro.lignes.map(ligne =>
+              ligne.id === ligneId ? { 
+                ...ligne, 
+                id_devise, 
+                devise: devises.find(d => d.id === id_devise)
+              } : ligne
+            )
+          }
+        }
+        return appro
+      }))
+      
+    } catch (error) {
+      console.error("Erreur lors de la mise à jour de la devise", error)
+      throw error
+    } finally {
+      setIsUpdatingDevise(false)
+    }
+  }
+
+  // Fonction pour mettre à jour la devise de plusieurs lignes
+  const handleUpdateMultipleLignesDevise = async (updates: { id: number; id_devise: number }[]) => {
+    setIsUpdatingDevise(true)
+    try {
+      // Appel API pour chaque mise à jour (ou un endpoint batch)
+      for (const update of updates) {
+        await backendRequest<{ data: LigneRaw }>(`/lignes-approvisionnements/${update.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ id_devise: update.id_devise }),
+        })
+      }
+      
+      // Mettre à jour l'affichage local
+      if (selectedApprovisionnement) {
+        const updatedLignes = selectedApprovisionnement.lignes.map(ligne => {
+          const update = updates.find(u => u.id === ligne.id)
+          if (update) {
+            return {
+              ...ligne,
+              id_devise: update.id_devise,
+              devise: devises.find(d => d.id === update.id_devise)
+            }
+          }
+          return ligne
+        })
+        setSelectedApprovisionnement({
+          ...selectedApprovisionnement,
+          lignes: updatedLignes
+        })
+      }
+      
+      // Mettre à jour dans la liste principale
+      setApprovisionnements(prev => prev.map(appro => {
+        if (appro.id === selectedApprovisionnement?.id) {
+          return {
+            ...appro,
+            lignes: appro.lignes.map(ligne => {
+              const update = updates.find(u => u.id === ligne.id)
+              if (update) {
+                return {
+                  ...ligne,
+                  id_devise: update.id_devise,
+                  devise: devises.find(d => d.id === update.id_devise)
+                }
+              }
+              return ligne
+            })
+          }
+        }
+        return appro
+      }))
+      
+    } catch (error) {
+      console.error("Erreur lors de la mise à jour des devises", error)
+      throw error
+    } finally {
+      setIsUpdatingDevise(false)
+    }
+  }
 
   useEffect(() => {
     ;(async () => {
@@ -552,7 +915,7 @@ export default function ApprovisionnementsPage() {
               <div className="flex justify-between items-center rounded-xl border bg-muted/20 px-4 py-3">
                 <div>
                   <p className="text-sm font-medium">{filteredHistory.length} document(s) trouvé(s)</p>
-                  <p className="text-xs text-muted-foreground">Les lignes et lots sont générés automatiquement à l’enregistrement.</p>
+                  <p className="text-xs text-muted-foreground">Les lignes et lots sont générés automatiquement à l'enregistrement.</p>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => { setHistorySearch(""); setShowOnlyWithLines(false) }}>
                   <X className="h-4 w-4 mr-2" />
@@ -634,98 +997,90 @@ export default function ApprovisionnementsPage() {
 
         <TabsContent value="details" className="space-y-4">
           {selectedApprovisionnement ? (
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Package className="h-5 w-5" />
-                      Détails de {selectedApprovisionnement.code}
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">Vue compacte des produits réapprovisionnés.</p>
+            <>
+              <Card>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Package className="h-5 w-5" />
+                        Détails de {selectedApprovisionnement.code}
+                      </CardTitle>
+                      <p className="text-sm text-muted-foreground">Vue compacte des produits réapprovisionnés.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setShowMultipleEditDialog(true)}
+                        disabled={summaryLines.length === 0}
+                      >
+                        <DollarSign className="h-4 w-4 mr-2" />
+                        Modifier devise (plusieurs)
+                      </Button>
+                      <Badge variant="secondary">{selectedApprovisionnement.lignes?.length ?? 0} ligne(s)</Badge>
+                    </div>
                   </div>
-                  <Badge variant="secondary">{selectedApprovisionnement.lignes?.length ?? 0} ligne(s)</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Produit</TableHead>
-                      <TableHead>Quantité</TableHead>
-                      <TableHead>Prix unitaire</TableHead>
-                      <TableHead>Prix vente</TableHead>
-                      <TableHead>Lots</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {summaryLines.length === 0 ? (
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Aucune ligne associée</TableCell>
+                        <TableHead>Produit</TableHead>
+                        <TableHead>Quantité</TableHead>
+                        <TableHead>Prix unitaire</TableHead>
+                        <TableHead>Prix vente</TableHead>
+                        <TableHead>Devise</TableHead>
+                        <TableHead>Lots</TableHead>
+                        <TableHead className="w-12"></TableHead>
                       </TableRow>
-                    ) : summaryLines.map(ligne => (
-                      <TableRow key={ligne.id}>
-                        <TableCell>{ligne.produit?.nom ?? `#${ligne.id_produit}`}</TableCell>
-                        <TableCell>{ligne.quantite}</TableCell>
-                        <TableCell>{formatMoney(ligne.prix_unitaire)}</TableCell>
-                        <TableCell>{formatMoney(ligne.prix_vente)}</TableCell>
-                        <TableCell><Badge variant="secondary">{ligne.lots?.length ?? 0}</Badge></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {summaryLines.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Aucune ligne associée</TableCell>
+                        </TableRow>
+                      ) : summaryLines.map(ligne => (
+                        <TableRow key={ligne.id}>
+                          <TableCell>{ligne.produit?.nom ?? `#${ligne.id_produit}`}</TableCell>
+                          <TableCell>{ligne.quantite}</TableCell>
+                          <TableCell>{formatMoney(ligne.prix_unitaire)}</TableCell>
+                          <TableCell>{formatMoney(ligne.prix_vente)}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-blue-50">
+                              {ligne.devise?.code || `Devise #${ligne.id_devise}`}
+                            </Badge>
+                          </TableCell>
+                          <TableCell><Badge variant="secondary">{ligne.lots?.length ?? 0}</Badge></TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setEditingLigne(ligne)}
+                              title="Modifier la devise"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </>
           ) : (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
                 <Layers className="h-12 w-12 mx-auto mb-3 opacity-40" />
-                Choisis un approvisionnement depuis l’onglet Historique pour voir ses détails.
+                Choisis un approvisionnement depuis l'onglet Historique pour voir ses détails.
               </CardContent>
             </Card>
           )}
         </TabsContent>
       </Tabs>
 
-      {selectedApprovisionnement && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              Détails de {selectedApprovisionnement.code}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Produit</TableHead>
-                  <TableHead>Quantité</TableHead>
-                  <TableHead>Prix unitaire</TableHead>
-                  <TableHead>Prix vente</TableHead>
-                  <TableHead>Lots</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {summaryLines.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Aucune ligne associée</TableCell>
-                  </TableRow>
-                ) : summaryLines.map(ligne => (
-                  <TableRow key={ligne.id}>
-                    <TableCell>{ligne.produit?.nom ?? `#${ligne.id_produit}`}</TableCell>
-                    <TableCell>{ligne.quantite}</TableCell>
-                    <TableCell>{formatMoney(ligne.prix_unitaire)}</TableCell>
-                    <TableCell>{formatMoney(ligne.prix_vente)}</TableCell>
-                    <TableCell><Badge variant="secondary">{ligne.lots?.length ?? 0}</Badge></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
+      {/* Dialog pour créer/modifier l'approvisionnement */}
       <Dialog open={showDialog} onOpenChange={(open) => !open && closeDialog()}>
         <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
           <DialogHeader>
@@ -753,6 +1108,7 @@ export default function ApprovisionnementsPage() {
               </div>
             </div>
 
+            {!editing && (
               <div className="rounded-3xl border bg-gradient-to-br from-muted/50 via-background to-orange-50/40 p-4 space-y-4 shadow-sm">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="space-y-1">
@@ -761,7 +1117,7 @@ export default function ApprovisionnementsPage() {
                       <p className="text-sm font-semibold">Produits à approvisionner</p>
                       <Badge variant="secondary">{selectedProductsCount} sélectionné(s)</Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground">Coche seulement les produits voulus, puis complète prix d’achat, prix de vente et devise.</p>
+                    <p className="text-xs text-muted-foreground">Coche seulement les produits voulus, puis complète prix d'achat, prix de vente et devise.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={selectAllVisibleProducts}>
@@ -799,7 +1155,7 @@ export default function ApprovisionnementsPage() {
                         Aucun produit trouvé.
                       </div>
                     ) : (
-                      filteredProducts.map((product, index) => {
+                      filteredProducts.map((product) => {
                         const selection = productSelections[product.id] ?? createEmptySelection()
                         const defaultDeviseId = devises[0] ? String(devises[0].id) : ""
 
@@ -882,6 +1238,7 @@ export default function ApprovisionnementsPage() {
                   <Badge variant="outline" className="rounded-full px-3 py-1">Prix en décimal</Badge>
                 </div>
               </div>
+            )}
 
             {formError && (
               <Alert variant="destructive">
@@ -900,6 +1257,24 @@ export default function ApprovisionnementsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog pour modifier la devise d'une seule ligne */}
+      <EditSingleLigneDialog
+        ligne={editingLigne}
+        devises={devises}
+        open={!!editingLigne}
+        onClose={() => setEditingLigne(null)}
+        onSave={handleUpdateSingleLigneDevise}
+      />
+
+      {/* Dialog pour modifier la devise de plusieurs lignes */}
+      <EditMultipleLignesDialog
+        lignes={summaryLines}
+        devises={devises}
+        open={showMultipleEditDialog}
+        onClose={() => setShowMultipleEditDialog(false)}
+        onSaveMultiple={handleUpdateMultipleLignesDevise}
+      />
     </div>
   )
 }
