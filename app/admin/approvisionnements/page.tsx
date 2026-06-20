@@ -4,6 +4,7 @@ import type React from "react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { AlertCircle, CalendarDays, Edit, Loader2, MoreHorizontal, Package, Plus, RefreshCw, Search, Trash2, Boxes, Truck, X, Eye, Filter, ArrowUpDown, Layers, TrendingUp, DollarSign, History, Save } from "lucide-react"
 import { backendRequest } from "@/app/services/backend"
+import formatMoney from "@/lib/formatMoney"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -365,12 +366,7 @@ function normalizeAppro(raw: ApprovisionnementRaw): Approvisionnement {
   }
 }
 
-function formatMoney(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === "") return "—"
-  const num = Number(value)
-  if (!Number.isFinite(num)) return String(value)
-  return num.toFixed(2)
-}
+// use centralized formatMoney util
 
 function createEmptySelection(): ProductSelection {
   return {

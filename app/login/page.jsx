@@ -174,7 +174,7 @@ export default function LoginPage() {
             </form>
 
             {/* Demo Credentials */}
-            <div className="mt-6 pt-6 border-t border-white/10">
+            {/* <div className="mt-6 pt-6 border-t border-white/10">
               <p className="text-sm text-slate-400 text-center mb-3">
                 Identifiants de démonstration
               </p>
@@ -188,7 +188,7 @@ export default function LoginPage() {
                   <p className="text-xs text-slate-300">email vendeur + mot de passe</p>
                 </div>
               </div>
-            </div>
+            </div> */}
           </CardContent>
         </Card>
 

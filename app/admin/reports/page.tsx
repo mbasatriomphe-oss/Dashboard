@@ -1,3 +1,4 @@
+ 
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
@@ -26,10 +27,12 @@ import {
   Wallet,
 } from "lucide-react"
 import { backendRequest } from "@/app/services/backend"
+import formatMoney from "@/lib/formatMoney"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
@@ -222,9 +225,7 @@ function parseDate(value?: string | null) {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-function formatMoney(value: number, currency = "FCFA") {
-  return `${currency} ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(value)}`
-}
+
 
 function formatPercent(value: number) {
   const sign = value > 0 ? "+" : ""
@@ -407,6 +408,8 @@ export default function ShopReportsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<ReportsState>(EMPTY_STATE)
+  const [devises, setDevises] = useState<Array<{ id: number; code?: string; symbole?: string }>>([])
+  const [selectedCurrency, setSelectedCurrency] = useState<string>("")
 
   useEffect(() => {
     let cancelled = false
@@ -425,7 +428,7 @@ export default function ShopReportsPage() {
       setError(null)
 
       try {
-        const [sales, products, clients, sellers, categories, stocks, lots, approvisionnements, cashTransactions, caisses] = await Promise.all([
+        const [sales, products, clients, sellers, categories, stocks, lots, approvisionnements, cashTransactions, caisses, devises] = await Promise.all([
           fetchRows<BackendSale>("/ventes?per_page=all"),
           fetchRows<BackendProduct>("/produits?per_page=all"),
           fetchRows<BackendClient>("/clients?per_page=all"),
@@ -436,6 +439,7 @@ export default function ShopReportsPage() {
           fetchRows<BackendApprovisionnement>("/approvisionnements?per_page=all"),
           fetchRows<BackendCashTransaction>("/transactions-caisses?per_page=all"),
           fetchRows<BackendCaisse>("/caisses?per_page=all"),
+          fetchRows<any>("/devises?per_page=all"),
         ])
 
         if (cancelled) {
@@ -454,6 +458,7 @@ export default function ShopReportsPage() {
           cashTransactions,
           caisses,
         })
+        setDevises((devises ?? []) as Array<{ id: number; code?: string; symbole?: string }>)
       } catch (loadError) {
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : "Impossible de charger les rapports")
@@ -889,7 +894,7 @@ export default function ShopReportsPage() {
     return data.caisses.map((caisse) => ({
       id: caisse.id,
       balance: toNumber(caisse.solde),
-      currency: caisse.devise?.symbole || caisse.devise?.code || caisse.devise?.nom || "FCFA",
+      currency: caisse.devise?.symbole || caisse.devise?.code || caisse.devise?.nom || (typeof window !== "undefined" ? localStorage.getItem("pos_currency_symbol") || "" : ""),
       label: caisse.devise?.nom || caisse.devise?.code || "Caisse",
     }))
   }, [data.caisses])
@@ -935,6 +940,39 @@ export default function ShopReportsPage() {
     const year = aggregateSalesByGranularity(saleRows, "year")
     return { day, week, month, year }
   }, [saleRows])
+
+  const [profitByDay, setProfitByDay] = useState<Array<any>>([])
+  const [profitByProduct, setProfitByProduct] = useState<Array<any>>([])
+
+  useEffect(() => {
+    let cancelled = false
+    const fetchProfit = async () => {
+      try {
+        const s = format(startDate, 'yyyy-MM-dd')
+        const e = format(endDate, 'yyyy-MM-dd')
+        const target = selectedCurrency && selectedCurrency !== '__none__' ? `&devise_code=${encodeURIComponent(selectedCurrency)}` : ''
+        const resp = await backendRequest<BackendEnvelope<unknown>>(`/rapports/benefice-periode?date_debut=${encodeURIComponent(s)}&date_fin=${encodeURIComponent(e)}${target}`)
+        const p = normalizeRows<any>(resp)
+        if (!cancelled) setProfitByDay(p)
+      } catch (err) {
+        // ignore
+      }
+
+      try {
+        const s = format(startDate, 'yyyy-MM-dd')
+        const e = format(endDate, 'yyyy-MM-dd')
+        const target2 = selectedCurrency && selectedCurrency !== '__none__' ? `&devise_code=${encodeURIComponent(selectedCurrency)}` : ''
+        const resp2 = await backendRequest<BackendEnvelope<unknown>>(`/rapports/benefice-produit?date_debut=${encodeURIComponent(s)}&date_fin=${encodeURIComponent(e)}&limit=50${target2}`)
+        const p2 = normalizeRows<any>(resp2)
+        if (!cancelled) setProfitByProduct(p2)
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    void fetchProfit()
+    return () => { cancelled = true }
+  }, [startDate, endDate, selectedCurrency])
 
   const periodComparisons = useMemo(() => {
     const currentWeek = aggregateSalesByGranularity(saleRows, "week").reduce((sum, item) => sum + item.revenue, 0)
@@ -1034,6 +1072,186 @@ export default function ShopReportsPage() {
     ])
   }
 
+  const generatePrintableReport = async () => {
+    const header = document.title || (typeof window !== 'undefined' ? window.location.hostname : 'Rapport')
+    const period = `${format(startDate, 'yyyy-MM-dd')} → ${format(endDate, 'yyyy-MM-dd')}`
+
+    // prefer selectedCurrency if not sentinel
+    const currencyParam = selectedCurrency && selectedCurrency !== '__none__' ? `&devise_code=${encodeURIComponent(selectedCurrency)}` : ''
+
+    // fetch full data from API (use backendRequest + normalizeRows)
+    let ventas: any[] = []
+    let profitDays: any[] = []
+    let profitProds: any[] = []
+    let stocks: any[] = []
+
+    try {
+      const s = format(startDate, 'yyyy-MM-dd')
+      const e = format(endDate, 'yyyy-MM-dd')
+      const [vRes, pdRes, ppRes, stRes] = await Promise.all([
+        backendRequest(`/ventes?per_page=all&date_debut=${encodeURIComponent(s)}&date_fin=${encodeURIComponent(e)}`),
+        backendRequest(`/rapports/benefice-periode?date_debut=${encodeURIComponent(s)}&date_fin=${encodeURIComponent(e)}${currencyParam}`),
+        backendRequest(`/rapports/benefice-produit?date_debut=${encodeURIComponent(s)}&date_fin=${encodeURIComponent(e)}&limit=100${currencyParam}`),
+        backendRequest(`/stocks/disponible`),
+      ])
+
+      ventas = normalizeRows<any>(vRes)
+      profitDays = normalizeRows<any>(pdRes)
+      profitProds = normalizeRows<any>(ppRes)
+      stocks = normalizeRows<any>(stRes)
+    } catch (err) {
+      // fallback to client-side data if API calls fail
+      ventas = saleRows
+      profitDays = profitByDay
+      profitProds = profitByProduct
+      stocks = inventoryRows
+    }
+
+    const salesHtml = ventas.map((s) => {
+      const date = s.date ? format(new Date(s.date), 'yyyy-MM-dd HH:mm') : (s.created_at ? format(new Date(s.created_at), 'yyyy-MM-dd HH:mm') : '')
+      const client = getFullName(s.client)
+      const seller = getFullName(s.vendeur ?? s.vendeur)
+      const montant = s.montant_total ?? s.total ?? (s.montant ? s.montant : 0)
+      return `<tr><td>${date}</td><td>${s.code ?? s.id}</td><td>${client}</td><td>${seller}</td><td style="text-align:right">${formatMoney(montant, s.deviseVente?.symbole ?? s.devise?.symbole ?? undefined)}</td></tr>`
+    }).join('')
+
+    const profitDayHtml = profitDays.map((r) => `<tr><td>${r.date_vente}</td><td style="text-align:right">${r.devise_code || ''}</td><td style="text-align:right">${formatMoney(Number(r.benefice_total || 0), r.devise_code || '')}</td></tr>`).join('')
+
+    const profitProdHtml = profitProds.map((r) => `<tr><td>${r.produit_nom || r.produit_code || `#${r.id_produit}`}</td><td style="text-align:right">${(r.quantite_vendue ?? 0).toLocaleString('fr-FR')}</td><td style="text-align:right">${formatMoney(Number(r.chiffre_affaires ?? 0), r.devise_code)}</td><td style="text-align:right">${formatMoney(Number(r.benefice_total ?? 0), r.devise_code)}</td></tr>`).join('')
+
+    const inventoryHtml = stocks.map((row) => {
+      const sku = row.code || row.sku || ''
+      const name = row.nom || row.name || ''
+      const stockVal = row.stock_actuel ?? row.actualStock ?? 0
+      const value = row.stockValue ?? row.valeur ?? 0
+      return `<tr><td>${sku}</td><td>${name}</td><td style="text-align:right">${Number(stockVal).toLocaleString('fr-FR')}</td><td style="text-align:right">${formatMoney(value)}</td></tr>`
+    }).join('')
+
+    const css = `
+      @page { size: A4 landscape; margin: 10mm }
+      body { font-family: Arial, Helvetica, sans-serif; color: #111 }
+      h1,h2,h3 { margin: 0 0 8px 0 }
+      .meta { margin-bottom: 12px }
+      table { width:100%; border-collapse: collapse; margin-bottom: 18px }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px }
+      th { background: #f3f4f6 }
+      tr { page-break-inside: avoid }
+    `
+
+    const html = `
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Rapport complet - ${period}</title>
+          <style>${css}</style>
+        </head>
+        <body>
+          <header>
+            <h1>${header}</h1>
+            <div class="meta"><strong>Période:</strong> ${period}</div>
+          </header>
+
+          <section>
+            <h2>Ventes (${ventas.length})</h2>
+            <table>
+              <thead><tr><th>Date</th><th>Code</th><th>Client</th><th>Vendeur</th><th class="text-right">Montant</th></tr></thead>
+              <tbody>${salesHtml}</tbody>
+            </table>
+          </section>
+
+          <section>
+            <h2>Bénéfice par jour</h2>
+            <table>
+              <thead><tr><th>Date</th><th>Devise</th><th class="text-right">Bénéfice</th></tr></thead>
+              <tbody>${profitDayHtml}</tbody>
+            </table>
+          </section>
+
+          <section>
+            <h2>Bénéfice par produit</h2>
+            <table>
+              <thead><tr><th>Produit</th><th class="text-right">Quantité</th><th class="text-right">CA</th><th class="text-right">Bénéfice</th></tr></thead>
+              <tbody>${profitProdHtml}</tbody>
+            </table>
+          </section>
+
+          <section>
+            <h2>Inventaire (valeur)</h2>
+            <table>
+              <thead><tr><th>SKU</th><th>Produit</th><th class="text-right">Stock</th><th class="text-right">Valeur</th></tr></thead>
+              <tbody>${inventoryHtml}</tbody>
+            </table>
+          </section>
+
+        </body>
+      </html>
+    `
+
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    setTimeout(() => w.print(), 300)
+  }
+
+  async function downloadReportPdf() {
+    const mapping: Record<string, string | null> = {
+      sales: '/api/rapports/ventes/pdf',
+      stock: '/api/rapports/stock/pdf',
+      finance: null,
+      clients: null,
+      personnel: null,
+      overview: null,
+    }
+
+    const path = mapping[selectedTab]
+    if (!path) {
+      // fallback to printable HTML if no PDF endpoint
+      generatePrintableReport()
+      return
+    }
+
+    setLoading(true)
+    try {
+      const token = (typeof window !== 'undefined' && (localStorage.getItem('token') || localStorage.getItem('authToken'))) || ''
+      const headers: Record<string, string> = { Accept: 'application/pdf' }
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const res = await fetch(path, { method: 'GET', headers, credentials: 'include' })
+      if (!res.ok) {
+        // Try signed URL fallback
+        try {
+          const signedRes = await fetch(path.replace('/pdf', '/signed'), { method: 'POST', headers, credentials: 'include' })
+          if (signedRes.ok) {
+            const body = await signedRes.json()
+            if (body?.url) {
+              window.open(body.url, '_blank')
+              return
+            }
+          }
+        } catch (e) {
+          // ignore and continue to throw below
+        }
+        throw new Error('Echec génération PDF')
+      }
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `rapport_${selectedTab}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      alert('Erreur lors du téléchargement du PDF: ' + (err?.message || String(err)))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const exportablePaymentNote = "Les modes de paiement détaillés ne sont pas stockés dans la table ventes; ce bloc affiche donc les encaissements de caisse et non une répartition caisse/carte/mobile."
   const exportableHoursNote = "Les heures travaillées réelles ne sont pas exposées par l'API; elles sont estimées à partir du volume de ventes par vendeur."
 
@@ -1090,11 +1308,19 @@ export default function ShopReportsPage() {
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
-              Imprimer
+              Imprimer (page)
+            </Button>
+            <Button variant="secondary" onClick={generatePrintableReport}>
+              <Printer className="mr-2 h-4 w-4" />
+              Imprimer complet
             </Button>
             <Button variant="secondary" onClick={handleExport}>
               <Download className="mr-2 h-4 w-4" />
               Exporter CSV
+            </Button>
+            <Button variant="secondary" onClick={() => downloadReportPdf()}>
+              <Download className="mr-2 h-4 w-4" />
+              Télécharger PDF
             </Button>
           </div>
         </div>
@@ -1140,6 +1366,18 @@ export default function ShopReportsPage() {
                   }}
                 />
               </div>
+            </div>
+            <div className="ml-4 w-56">
+              <p className="text-xs text-muted-foreground">Devise (normaliser bénéfice)</p>
+              <Select value={selectedCurrency} onValueChange={(v) => setSelectedCurrency(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Aucune" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60 overflow-y-auto">
+                  <SelectItem value="__none__">Aucune</SelectItem>
+                  {devises.map(d => <SelectItem key={d.id} value={d.code ?? `DEV_${d.id}`}>{d.symbole ? `${d.symbole} ${d.code}` : d.code}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
@@ -1693,6 +1931,61 @@ export default function ShopReportsPage() {
                         <TableRow key={row.id}>
                           <TableCell>{row.label}</TableCell>
                           <TableCell className="text-right">{formatMoney(row.balance, row.currency)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Bénéfice par jour</CardTitle>
+                  <CardDescription>Bénéfice total par jour sur la période sélectionnée</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Devise</TableHead>
+                        <TableHead className="text-right">Bénéfice</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {profitByDay.map((r) => (
+                        <TableRow key={r.date_vente + (r.devise_code || '')}>
+                          <TableCell>{r.date_vente}</TableCell>
+                          <TableCell className="text-right">{r.devise_code || (typeof window !== 'undefined' ? localStorage.getItem('pos_currency_code') || '' : '')}</TableCell>
+                          <TableCell className="text-right">{formatMoney(Number(r.benefice_total || 0), r.devise_code || (typeof window !== 'undefined' ? localStorage.getItem('pos_currency_symbol') || '' : ''))}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Bénéfice par produit</CardTitle>
+                  <CardDescription>Produits triés par bénéfice décroissant</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Produit</TableHead>
+                        <TableHead className="text-right">Quantité</TableHead>
+                        <TableHead className="text-right">CA</TableHead>
+                        <TableHead className="text-right">Bénéfice</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {profitByProduct.map((r) => (
+                        <TableRow key={String(r.id_produit)}>
+                          <TableCell>{r.produit_nom || r.produit_code || `#${r.id_produit}`}</TableCell>
+                          <TableCell className="text-right">{(r.quantite_vendue ?? 0).toLocaleString('fr-FR')}</TableCell>
+                          <TableCell className="text-right">{formatMoney(Number(r.chiffre_affaires ?? 0), r.devise_code)}</TableCell>
+                          <TableCell className="text-right">{formatMoney(Number(r.benefice_total ?? 0), r.devise_code)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

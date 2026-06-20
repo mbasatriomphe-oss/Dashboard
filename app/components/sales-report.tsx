@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { TrendingUp, DollarSign, ShoppingCart, Package } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import formatMoney from "@/lib/formatMoney"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { db, type SalesReport } from "../services/database"
@@ -73,7 +74,7 @@ export default function SalesReportComponent() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${report.totalSales.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{formatMoney(report.totalSales)}</div>
           </CardContent>
         </Card>
 
@@ -93,7 +94,7 @@ export default function SalesReportComponent() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${report.averageTransaction.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{formatMoney(report.averageTransaction)}</div>
           </CardContent>
         </Card>
 
@@ -123,7 +124,7 @@ export default function SalesReportComponent() {
                   <span className="font-medium">{product.name}</span>
                 </div>
                 <div className="text-right">
-                  <p className="font-medium">${product.revenue.toFixed(2)}</p>
+                  <p className="font-medium">{formatMoney(product.revenue)}</p>
                   <p className="text-sm text-muted-foreground">{product.quantity} vendus</p>
                 </div>
               </div>

@@ -36,7 +36,79 @@ import {
   History,
   FileText,
 } from "lucide-react"
-import { backendRequest } from "@/app/services/backend"
+import { backendRequest, getBackendBaseUrl, getStoredToken } from "@/app/services/backend"
+
+async function downloadPdf(path, filename) {
+  try {
+    const base = getBackendBaseUrl()
+    const url = `${base}${path}`
+
+    const headers = new Headers()
+    headers.set("Accept", "application/pdf")
+    const token = getStoredToken()
+    let credentials = undefined
+
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`)
+    } else {
+      // fallback to cookie-based auth (Sanctum)
+      credentials = "include"
+    }
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers,
+      credentials,
+      keepalive: true,
+    })
+
+    if (!res.ok) {
+      // If PDF endpoint failed, request a signed public URL from the backend and open it
+      try {
+        const signedResp = await fetch(`${base}${path.replace(/\.pdf$/, '/signed')}`, {
+          method: 'POST',
+          headers: new Headers({ 'Authorization': token ? `Bearer ${token}` : '' }),
+        })
+        if (signedResp.ok) {
+          const j = await signedResp.json()
+          if (j.url) {
+            window.open(j.url, '_blank')
+            return
+          }
+        }
+      } catch (e) {
+        // fallthrough to show error
+      }
+      let msg = `Erreur lors du téléchargement: ${res.status}`
+      try {
+        const text = await res.text()
+        if (text) {
+          // try parse json message
+          try {
+            const j = JSON.parse(text)
+            msg = j.message || JSON.stringify(j)
+          } catch {
+            msg = text
+          }
+        }
+      } catch {
+        // ignore
+      }
+      throw new Error(msg)
+    }
+ 
+    const blob = await res.blob()
+    const link = document.createElement("a")
+    link.href = window.URL.createObjectURL(blob)
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  } catch (err) {
+    console.error(err)
+    alert(err.message || "Impossible de télécharger le rapport")
+  }
+}
 
 const DEFAULT_PRODUCT_IMAGE =
   "data:image/svg+xml;charset=UTF-8," +
@@ -53,7 +125,6 @@ function formatDate(value) {
   if (!value) {
     return "-"
   }
-
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? "-" : date.toISOString().split("T")[0]
 }
@@ -549,6 +620,12 @@ export default function StockReportsPage() {
           <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Exporter CSV
+          </Button>
+          <Button size="sm" onClick={async () => await downloadPdf(`/rapports/ventes/pdf`, "ventes.pdf")}>
+            <Download className="w-4 h-4 mr-2" /> Télécharger Ventes (PDF)
+          </Button>
+          <Button size="sm" onClick={async () => await downloadPdf(`/rapports/stock/pdf`, "stock.pdf")}>
+            <Download className="w-4 h-4 mr-2" /> Télécharger Stock (PDF)
           </Button>
         </div>
       </div>

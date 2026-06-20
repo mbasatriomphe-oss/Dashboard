@@ -14,7 +14,6 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
-  CardFooter,
 } from "@/components/ui/card"
 import {
   Table,
@@ -41,7 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -49,280 +48,284 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
   Users,
   UserPlus,
-  UserCog,
-  Trash2,
   Edit,
+  Trash2,
   MoreVertical,
   Store,
-  ShoppingBag,
   Bell,
   Shield,
   Palette,
-  Globe,
-  DollarSign,
-  Package,
-  AlertTriangle,
+  CreditCard,
   Save,
   RefreshCw,
   Upload,
-  Building2,
-  Phone,
-  Mail,
-  MapPin,
-  Clock,
-  CreditCard,
-  Printer,
-  Moon,
-  Sun,
+  Search,
+  Plus,
+  XCircle,
   Eye,
   EyeOff,
   Key,
   LogOut,
   CheckCircle,
-  XCircle,
-  Plus,
-  Search,
-  Filter,
+  Sun,
+  Moon,
+  DollarSign,
+  Building2,
+  Phone,
+  Mail,
+  MapPin,
+  Globe,
+  Clock,
 } from "lucide-react"
 import { toast } from "sonner"
+import { backendRequest } from "@/app/services/backend"
+import formatMoney from "@/lib/formatMoney"
 
 // ==================== TYPES ====================
 
 interface Seller {
-  id: string
-  name: string
+  id: number
+  nom: string
+  prenom: string
   email: string
-  phone: string
+  telephone: string
+  code: string
   role: "admin" | "manager" | "cashier" | "seller"
   status: "active" | "inactive"
-  password: string
-  hireDate: string
-  avatar?: string
   commission?: number
-  hourlyRate?: number
-  salesTarget?: number
-  permissions: {
-    viewSales: boolean
-    editProducts: boolean
-    manageStock: boolean
-    viewReports: boolean
-    manageUsers: boolean
-    manageSettings: boolean
-  }
+  salaire_horaire?: number
+  objectif_vente?: number
+  password?: string
+  date_embauche: string
 }
 
 interface StoreInfo {
-  name: string
+  id?: number
+  nom: string
   logo: string
-  address: string
-  phone: string
+  adresse: string
+  telephone: string
   email: string
-  website: string
-  taxNumber: string
-  currency: string
-  timezone: string
-  businessHours: {
-    monday: { open: string; close: string; closed: boolean }
-    tuesday: { open: string; close: string; closed: boolean }
-    wednesday: { open: string; close: string; closed: boolean }
-    thursday: { open: string; close: string; closed: boolean }
-    friday: { open: string; close: string; closed: boolean }
-    saturday: { open: string; close: string; closed: boolean }
-    sunday: { open: string; close: string; closed: boolean }
-  }
+  site_web: string
+  numero_tva: string
+  devise: string
+  fuseau_horaire: string
 }
 
 interface AlertSettings {
-  lowStockThreshold: number
-  criticalStockThreshold: number
-  outOfStockAlert: boolean
-  lowStockAlert: boolean
-  dailyReportEmail: boolean
-  weeklyReportEmail: boolean
-  reportRecipients: string[]
+  seuil_stock_faible: number
+  seuil_stock_critique: number
+  alerte_rupture: boolean
+  alerte_stock_faible: boolean
+  rapport_quotidien: boolean
+  rapport_hebdomadaire: boolean
+  destinataires_rapports: string[]
 }
 
 interface InvoiceSettings {
-  headerText: string
-  footerText: string
-  invoicePrefix: string
-  nextInvoiceNumber: number
-  showTaxDetails: boolean
-  taxRate: number
-  currencySymbol: string
+  en_tete_ticket: string
+  pied_page_ticket: string
+  prefixe_facture: string
+  prochain_numero: number
+  afficher_tva: boolean
+  taux_tva: number
+  symbole_devise: string
 }
 
 interface AppearanceSettings {
   theme: "light" | "dark" | "system"
-  primaryColor: string
-  sidebarCollapsed: boolean
-  tableDensity: "compact" | "normal" | "comfortable"
-  showAnimations: boolean
+  couleur_principale: string
+  densite_tableau: "compact" | "normal" | "comfortable"
+  animations: boolean
 }
 
-// ==================== DONNÉES INITIALES ====================
-
-const initialSellers: Seller[] = [
-  {
-    id: "V001",
-    name: "Sophie Martin",
-    email: "sophie.martin@boutique.com",
-    phone: "+33 6 12 34 56 78",
-    role: "admin",
-    status: "active",
-    password: "******",
-    hireDate: "2023-01-15",
-    commission: 5,
-    hourlyRate: 15,
-    salesTarget: 10000,
-    permissions: {
-      viewSales: true,
-      editProducts: true,
-      manageStock: true,
-      viewReports: true,
-      manageUsers: true,
-      manageSettings: true,
-    },
-  },
-  {
-    id: "V002",
-    name: "Thomas Bernard",
-    email: "thomas.bernard@boutique.com",
-    phone: "+33 6 23 45 67 89",
-    role: "manager",
-    status: "active",
-    password: "******",
-    hireDate: "2023-03-20",
-    commission: 3,
-    hourlyRate: 14,
-    salesTarget: 8000,
-    permissions: {
-      viewSales: true,
-      editProducts: true,
-      manageStock: true,
-      viewReports: true,
-      manageUsers: false,
-      manageSettings: false,
-    },
-  },
-  {
-    id: "V003",
-    name: "Julie Petit",
-    email: "julie.petit@boutique.com",
-    phone: "+33 6 34 56 78 90",
-    role: "cashier",
-    status: "active",
-    password: "******",
-    hireDate: "2023-06-10",
-    commission: 2,
-    hourlyRate: 12,
-    salesTarget: 5000,
-    permissions: {
-      viewSales: true,
-      editProducts: false,
-      manageStock: false,
-      viewReports: false,
-      manageUsers: false,
-      manageSettings: false,
-    },
-  },
-  {
-    id: "V004",
-    name: "Nicolas Durand",
-    email: "nicolas.durand@boutique.com",
-    phone: "+33 6 45 67 89 01",
-    role: "seller",
-    status: "inactive",
-    password: "******",
-    hireDate: "2022-11-01",
-    commission: 4,
-    hourlyRate: 13,
-    salesTarget: 7000,
-    permissions: {
-      viewSales: true,
-      editProducts: false,
-      manageStock: true,
-      viewReports: true,
-      manageUsers: false,
-      manageSettings: false,
-    },
-  },
-]
-
-const initialStoreInfo: StoreInfo = {
-  name: "Ma Boutique",
-  logo: "",
-  address: "123 Rue du Commerce, 75001 Paris, France",
-  phone: "+33 1 23 45 67 89",
-  email: "contact@maboutique.com",
-  website: "www.maboutique.com",
-  taxNumber: "FR123456789",
-  currency: "EUR",
-  timezone: "Europe/Paris",
-  businessHours: {
-    monday: { open: "09:00", close: "19:00", closed: false },
-    tuesday: { open: "09:00", close: "19:00", closed: false },
-    wednesday: { open: "09:00", close: "19:00", closed: false },
-    thursday: { open: "09:00", close: "19:00", closed: false },
-    friday: { open: "09:00", close: "19:00", closed: false },
-    saturday: { open: "10:00", close: "18:00", closed: false },
-    sunday: { open: "00:00", close: "00:00", closed: true },
-  },
-}
-
-const initialAlertSettings: AlertSettings = {
-  lowStockThreshold: 10,
-  criticalStockThreshold: 5,
-  outOfStockAlert: true,
-  lowStockAlert: true,
-  dailyReportEmail: true,
-  weeklyReportEmail: false,
-  reportRecipients: ["admin@boutique.com", "manager@boutique.com"],
-}
-
-const initialInvoiceSettings: InvoiceSettings = {
-  headerText: "Merci de votre visite !",
-  footerText: "Retour possible sous 14 jours",
-  invoicePrefix: "INV",
-  nextInvoiceNumber: 1001,
-  showTaxDetails: true,
-  taxRate: 20,
-  currencySymbol: "€",
-}
-
-const initialAppearance: AppearanceSettings = {
-  theme: "system",
-  primaryColor: "#6366f1",
-  sidebarCollapsed: false,
-  tableDensity: "normal",
-  showAnimations: true,
+interface StoreHours {
+  jour: string
+  ouverture: string
+  fermeture: string
+  ferme: boolean
 }
 
 // ==================== COMPOSANT PRINCIPAL ====================
 
 export default function AdminSettingsPage() {
-  const [sellers, setSellers] = useState<Seller[]>(initialSellers)
-  const [storeInfo, setStoreInfo] = useState<StoreInfo>(initialStoreInfo)
-  const [alertSettings, setAlertSettings] = useState<AlertSettings>(initialAlertSettings)
-  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>(initialInvoiceSettings)
-  const [appearance, setAppearance] = useState<AppearanceSettings>(initialAppearance)
+  const [sellers, setSellers] = useState<Seller[]>([])
+  const [storeInfo, setStoreInfo] = useState<StoreInfo>({
+    nom: "",
+    logo: "",
+    adresse: "",
+    telephone: "",
+    email: "",
+    site_web: "",
+    numero_tva: "",
+    devise: "EUR",
+    fuseau_horaire: "Europe/Paris",
+  })
+  const [storeHours, setStoreHours] = useState<StoreHours[]>([])
+  const [alertSettings, setAlertSettings] = useState<AlertSettings>({
+    seuil_stock_faible: 10,
+    seuil_stock_critique: 5,
+    alerte_rupture: true,
+    alerte_stock_faible: true,
+    rapport_quotidien: true,
+    rapport_hebdomadaire: false,
+    destinataires_rapports: [],
+  })
+  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>({
+    en_tete_ticket: "Merci de votre visite !",
+    pied_page_ticket: "Retour possible sous 14 jours",
+    prefixe_facture: "INV",
+    prochain_numero: 1001,
+    afficher_tva: true,
+    taux_tva: 20,
+    symbole_devise: "€",
+  })
+  const [appearance, setAppearance] = useState<AppearanceSettings>({
+    theme: "system",
+    couleur_principale: "#6366f1",
+    densite_tableau: "normal",
+    animations: true,
+  })
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingSeller, setEditingSeller] = useState<Seller | null>(null)
   const [formData, setFormData] = useState<Partial<Seller>>({})
   const [searchTerm, setSearchTerm] = useState("")
   const [roleFilter, setRoleFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [isLoading, setIsLoading] = useState(true)
+  const [devises, setDevises] = useState<{ id: number; code: string; nom: string; symbole: string }[]>([])
+  const [reportStart, setReportStart] = useState("")
+  const [reportEnd, setReportEnd] = useState("")
+  const [reportData, setReportData] = useState<any | null>(null)
+  const [isReportLoading, setIsReportLoading] = useState(false)
+
+  // Charger les données depuis l'API
+  useEffect(() => {
+    fetchAllData()
+  }, [])
+
+  const fetchAllData = async () => {
+    setIsLoading(true)
+    try {
+      await Promise.all([
+        fetchSellers(),
+        fetchStoreInfo(),
+        fetchAlertSettings(),
+        fetchInvoiceSettings(),
+        fetchAppearance(),
+        fetchDevises(),
+      ])
+    } catch (error) {
+      console.error("Erreur lors du chargement des données:", error)
+      toast.error("Erreur lors du chargement des données")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const fetchSellers = async () => {
+    try {
+      const response = await backendRequest<{ data: Seller[] }>("/vendeurs?per_page=all")
+      setSellers(response.data || [])
+    } catch (error) {
+      console.error("Erreur chargement vendeurs:", error)
+    }
+  }
+
+  const fetchStoreInfo = async () => {
+    try {
+      const response = await backendRequest<{ data: StoreInfo }>("/parametres/boutique")
+      if (response.data) {
+        setStoreInfo(response.data)
+      }
+      // Charger les horaires
+      const hoursResponse = await backendRequest<{ data: StoreHours[] }>("/parametres/horaires")
+      setStoreHours(hoursResponse.data || [])
+    } catch (error) {
+      console.error("Erreur chargement boutique:", error)
+    }
+  }
+
+  const fetchAlertSettings = async () => {
+    try {
+      const response = await backendRequest<{ data: AlertSettings }>("/parametres/alertes")
+      if (response.data) {
+        setAlertSettings(response.data)
+      }
+    } catch (error) {
+      console.error("Erreur chargement alertes:", error)
+    }
+  }
+
+  const fetchInvoiceSettings = async () => {
+    try {
+      const response = await backendRequest<{ data: InvoiceSettings }>("/parametres/facturation")
+      if (response.data) {
+        setInvoiceSettings(response.data)
+      }
+    } catch (error) {
+      console.error("Erreur chargement facturation:", error)
+    }
+  }
+
+  const fetchAppearance = async () => {
+    try {
+      const response = await backendRequest<{ data: AppearanceSettings }>("/parametres/apparence")
+      if (response.data) {
+        setAppearance(response.data)
+        // Appliquer le thème
+        applyTheme(response.data.theme)
+      }
+    } catch (error) {
+      console.error("Erreur chargement apparence:", error)
+    }
+  }
+
+  const fetchDevises = async () => {
+    try {
+      const response = await backendRequest<{ data: any[] }>("/devises?per_page=all")
+      const list = response.data || []
+      setDevises(list)
+      if (typeof window !== "undefined" && list.length > 0) {
+        const first = list[0]
+        if (first) {
+          if (!localStorage.getItem("pos_currency_symbol") && (first.symbole || first.code)) {
+            localStorage.setItem("pos_currency_symbol", first.symbole || first.code || "")
+          }
+          if (!localStorage.getItem("pos_currency_code") && first.code) {
+            localStorage.setItem("pos_currency_code", first.code)
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Erreur chargement devises:", error)
+    }
+  }
+
+  const applyTheme = (theme: string) => {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark")
+    } else if (theme === "light") {
+      document.documentElement.classList.remove("dark")
+    } else {
+      if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        document.documentElement.classList.add("dark")
+      } else {
+        document.documentElement.classList.remove("dark")
+      }
+    }
+  }
 
   // Filtrer les vendeurs
   const filteredSellers = sellers.filter((seller) => {
-    const matchesSearch = seller.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const fullName = `${seller.nom} ${seller.prenom}`.toLowerCase()
+    const matchesSearch = fullName.includes(searchTerm.toLowerCase()) ||
       seller.email.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesRole = roleFilter === "all" || seller.role === roleFilter
     const matchesStatus = statusFilter === "all" || seller.status === statusFilter
@@ -341,112 +344,275 @@ export default function AdminSettingsPage() {
   }
 
   // Ajouter un vendeur
-  const handleAddSeller = () => {
-    const newSeller: Seller = {
-      id: `V${String(sellers.length + 1).padStart(3, "0")}`,
-      name: formData.name || "Nouveau Vendeur",
-      email: formData.email || "nouveau@boutique.com",
-      phone: formData.phone || "",
-      role: formData.role || "seller",
-      status: "active",
-      password: "temp123",
-      hireDate: new Date().toISOString().split("T")[0],
-      commission: formData.commission || 2,
-      hourlyRate: formData.hourlyRate || 12,
-      salesTarget: formData.salesTarget || 5000,
-      permissions: {
-        viewSales: formData.permissions?.viewSales ?? true,
-        editProducts: formData.permissions?.editProducts ?? false,
-        manageStock: formData.permissions?.manageStock ?? false,
-        viewReports: formData.permissions?.viewReports ?? false,
-        manageUsers: formData.permissions?.manageUsers ?? false,
-        manageSettings: formData.permissions?.manageSettings ?? false,
-      },
+  const handleAddSeller = async () => {
+    try {
+      const newSeller = {
+        nom: formData.nom || "Nouveau",
+        prenom: formData.prenom || "Vendeur",
+        email: formData.email || `vendeur${Date.now()}@boutique.com`,
+        telephone: formData.telephone || "",
+        role: formData.role || "seller",
+        password: "password123",
+        commission: formData.commission || 2,
+        salaire_horaire: formData.salaire_horaire || 12,
+        objectif_vente: formData.objectif_vente || 5000,
+      }
+      await backendRequest("/vendeurs", {
+        method: "POST",
+        body: JSON.stringify(newSeller),
+      })
+      await fetchSellers()
+      setIsDialogOpen(false)
+      setEditingSeller(null)
+      setFormData({})
+      toast.success("Vendeur ajouté avec succès")
+    } catch (error) {
+      toast.error("Erreur lors de l'ajout")
     }
-    setSellers([...sellers, newSeller])
-    setIsDialogOpen(false)
-    setEditingSeller(null)
-    setFormData({})
-    toast.success("Vendeur ajouté avec succès")
   }
 
   // Modifier un vendeur
-  const handleEditSeller = () => {
+  const handleEditSeller = async () => {
     if (!editingSeller) return
-    setSellers(sellers.map(s => s.id === editingSeller.id ? { ...s, ...formData } : s))
-    setIsDialogOpen(false)
-    setEditingSeller(null)
-    setFormData({})
-    toast.success("Vendeur modifié avec succès")
+    try {
+      await backendRequest(`/vendeurs/${editingSeller.id}`, {
+        method: "PUT",
+        body: JSON.stringify(formData),
+      })
+      await fetchSellers()
+      setIsDialogOpen(false)
+      setEditingSeller(null)
+      setFormData({})
+      toast.success("Vendeur modifié avec succès")
+    } catch (error) {
+      toast.error("Erreur lors de la modification")
+    }
   }
 
   // Supprimer un vendeur
-  const handleDeleteSeller = (id: string) => {
-    setSellers(sellers.filter(s => s.id !== id))
-    toast.success("Vendeur supprimé")
+  const handleDeleteSeller = async (id: number) => {
+    try {
+      await backendRequest(`/vendeurs/${id}`, { method: "DELETE" })
+      await fetchSellers()
+      toast.success("Vendeur supprimé")
+    } catch (error) {
+      toast.error("Erreur lors de la suppression")
+    }
   }
 
   // Changer le statut
-  const handleToggleStatus = (id: string) => {
-    setSellers(sellers.map(s => 
-      s.id === id ? { ...s, status: s.status === "active" ? "inactive" : "active" } : s
-    ))
-    toast.success("Statut mis à jour")
-  }
-
-  // Ouvrir le dialogue d'édition
-  const openEditDialog = (seller: Seller) => {
-    setEditingSeller(seller)
-    setFormData(seller)
-    setIsDialogOpen(true)
+  const handleToggleStatus = async (id: number, currentStatus: string) => {
+    const newStatus = currentStatus === "active" ? "inactive" : "active"
+    try {
+      await backendRequest(`/vendeurs/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ status: newStatus }),
+      })
+      await fetchSellers()
+      toast.success("Statut mis à jour")
+    } catch (error) {
+      toast.error("Erreur lors de la mise à jour")
+    }
   }
 
   // Sauvegarder les paramètres de la boutique
-  const handleSaveStoreSettings = () => {
-    toast.success("Paramètres de la boutique sauvegardés")
+  const handleSaveStoreSettings = async () => {
+    try {
+      await backendRequest("/parametres/boutique", {
+        method: "PUT",
+        body: JSON.stringify(storeInfo),
+      })
+      await backendRequest("/parametres/horaires", {
+        method: "PUT",
+        body: JSON.stringify({ horaires: storeHours }),
+      })
+      toast.success("Paramètres de la boutique sauvegardés")
+    } catch (error) {
+      toast.error("Erreur lors de la sauvegarde")
+    }
   }
 
   // Sauvegarder les alertes
-  const handleSaveAlerts = () => {
-    toast.success("Paramètres d'alertes sauvegardés")
+  const handleSaveAlerts = async () => {
+    try {
+      await backendRequest("/parametres/alertes", {
+        method: "PUT",
+        body: JSON.stringify(alertSettings),
+      })
+      toast.success("Paramètres d'alertes sauvegardés")
+    } catch (error) {
+      toast.error("Erreur lors de la sauvegarde")
+    }
   }
 
   // Sauvegarder les factures
-  const handleSaveInvoice = () => {
-    toast.success("Paramètres de facturation sauvegardés")
+  const handleSaveInvoice = async () => {
+    try {
+      await backendRequest("/parametres/facturation", {
+        method: "PUT",
+        body: JSON.stringify(invoiceSettings),
+      })
+      toast.success("Paramètres de facturation sauvegardés")
+    } catch (error) {
+      toast.error("Erreur lors de la sauvegarde")
+    }
   }
 
   // Sauvegarder l'apparence
-  const handleSaveAppearance = () => {
-    // Appliquer le thème
-    if (appearance.theme === "dark") {
-      document.documentElement.classList.add("dark")
-    } else if (appearance.theme === "light") {
-      document.documentElement.classList.remove("dark")
-    } else {
-      if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-        document.documentElement.classList.add("dark")
-      } else {
-        document.documentElement.classList.remove("dark")
-      }
+  const handleSaveAppearance = async () => {
+    try {
+      await backendRequest("/parametres/apparence", {
+        method: "PUT",
+        body: JSON.stringify(appearance),
+      })
+      applyTheme(appearance.theme)
+      // Appliquer la couleur primaire
+      document.documentElement.style.setProperty("--primary", appearance.couleur_principale)
+      toast.success("Apparence sauvegardée")
+    } catch (error) {
+      toast.error("Erreur lors de la sauvegarde")
     }
-    toast.success("Apparence sauvegardée")
+  }
+
+  // Récupérer le rapport de ventes pour une période
+  const handleFetchReport = async () => {
+    try {
+      setIsReportLoading(true)
+      if (reportStart && reportEnd) {
+        const res: any = await backendRequest<any>(`/rapports/chiffre-affaires?start=${reportStart}&end=${reportEnd}`)
+        // Si le backend renvoie un tableau de lignes (v_chiffre_affaires), normaliser
+        if (res && Array.isArray(res.data)) {
+          const salesRaw = res.data
+          const sales = salesRaw.map((r: any, idx: number) => ({
+            id: r.id || idx,
+            created_at: r.date_vente,
+            client_name: r.client_name || '-',
+            total: parseFloat(r.montant_total) || 0,
+            profit: parseFloat(r.profit || 0) || 0,
+            items: r.items || [],
+          }))
+          const total_amount = sales.reduce((sum: number, s: any) => sum + (Number(s.total) || 0), 0)
+          const total_profit = sales.reduce((sum: number, s: any) => sum + (Number(s.profit) || 0), 0)
+          setReportData({ total_amount, total_profit, sales })
+        } else {
+          // Si le backend renvoie déjà la forme attendue
+          setReportData(res)
+        }
+      } else if (reportStart && !reportEnd) {
+        const res: any = await backendRequest<any>(`/rapports/recap-journalier?date=${reportStart}`)
+        setReportData(res)
+      } else {
+        toast.error("Sélectionnez au moins une date de début")
+      }
+    } catch (error) {
+      console.error("Erreur chargement rapport:", error)
+      toast.error("Erreur lors de la génération du rapport")
+    } finally {
+      setIsReportLoading(false)
+    }
+  }
+
+  // Imprimer le rapport affiché
+  const handlePrintReport = () => {
+    if (!reportData) return
+    const title = `${storeInfo.nom || 'Mukingi Accessoir'} - Rapport de ventes`
+    const html = `
+      <html>
+        <head>
+          <title>${title}</title>
+          <style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px}</style>
+        </head>
+        <body>
+          <h2>${title}</h2>
+          <p>Période: ${reportStart || '-'} → ${reportEnd || reportStart || '-'}</p>
+          ${(() => {
+            const total = formatMoney(reportData.total_amount || 0, invoiceSettings.symbole_devise)
+            const profit = formatMoney(reportData.total_profit || 0, invoiceSettings.symbole_devise)
+            const rows = (reportData.sales || []).map((s: any) => `<tr><td>${s.id}</td><td>${new Date(s.created_at).toLocaleString()}</td><td>${s.client_name || (s.client && s.client.nom) || '-'}</td><td>${formatMoney(s.total || 0, invoiceSettings.symbole_devise)}</td><td>${formatMoney(s.profit || 0, invoiceSettings.symbole_devise)}</td></tr>`).join('')
+            return `<p>Total ventes: ${total}</p><p>Bénéfice: ${profit}</p><table><thead><tr><th>Id</th><th>Date</th><th>Client</th><th>Total</th><th>Profit</th></tr></thead><tbody>${rows}</tbody></table>`
+          })()}
+        </body>
+      </html>
+    `
+    const w = window.open('', '_blank')
+    if (w) {
+      w.document.write(html)
+      w.document.close()
+      w.focus()
+      w.print()
+    }
+  }
+
+  // Imprimer une facture pour une vente (s: vente object)
+  const printInvoice = (s: any) => {
+    const header = storeInfo.nom || 'Mukingi Accessoir'
+    const html = `
+      <html>
+        <head>
+          <title>Facture ${s.id}</title>
+          <style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px}</style>
+        </head>
+        <body>
+          <h2>${header}</h2>
+          <p>Facture N° ${invoiceSettings.prefixe_facture}-${invoiceSettings.prochain_numero}</p>
+          <p>Date: ${new Date(s.created_at).toLocaleString()}</p>
+          <p>Client: ${s.client_name || (s.client && s.client.nom) || '—'}</p>
+          <table>
+            <thead><tr><th>Produit</th><th>Qté</th><th>Prix</th><th>Total</th></tr></thead>
+            <tbody>
+              ${s.items && s.items.map((it: any) => `<tr><td>${it.produit_nom}</td><td>${it.quantite}</td><td>${formatMoney(it.prix_unitaire, invoiceSettings.symbole_devise)}</td><td>${formatMoney(it.total, invoiceSettings.symbole_devise)}</td></tr>`).join('')}
+            </tbody>
+          </table>
+          <h3>Total: ${formatMoney(s.total, invoiceSettings.symbole_devise)}</h3>
+        </body>
+      </html>
+    `
+    const w = window.open('', '_blank')
+    if (w) {
+      w.document.write(html)
+      w.document.close()
+      w.focus()
+      w.print()
+    }
+  }
+
+  // Créer un administrateur via route publique (utiliser avec précaution)
+  const createAdmin = async () => {
+    const nom = prompt('Nom (admin) :')
+    if (!nom) return
+    const prenom = prompt('Prénom (admin) :') || ''
+    const email = prompt('Email (admin) :')
+    if (!email) return
+    const password = prompt('Mot de passe :')
+    if (!password) return
+    const secret = prompt('Clé secrète admin :')
+    if (!secret) return
+    try {
+      await backendRequest('/register-admin', {
+        method: 'POST',
+        body: JSON.stringify({ nom, prenom, email, password, password_confirmation: password, secret }),
+      })
+      toast.success('Administrateur créé')
+    } catch (error) {
+      console.error(error)
+      toast.error('Erreur création administrateur')
+    }
   }
 
   const getRoleBadge = (role: string) => {
-    const styles = {
+    const styles: Record<string, string> = {
       admin: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
       manager: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
       cashier: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
       seller: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
     }
-    const labels = {
+    const labels: Record<string, string> = {
       admin: "Admin",
       manager: "Manager",
       cashier: "Caissier",
       seller: "Vendeur",
     }
-    return <Badge className={styles[role as keyof typeof styles]}>{labels[role as keyof typeof labels]}</Badge>
+    return <Badge className={styles[role]}>{labels[role] || role}</Badge>
   }
 
   const getStatusBadge = (status: string) => {
@@ -454,6 +620,16 @@ export default function AdminSettingsPage() {
       return <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Actif</Badge>
     }
     return <Badge variant="outline" className="text-muted-foreground">Inactif</Badge>
+  }
+
+  const joursSemaine = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    )
   }
 
   return (
@@ -466,7 +642,7 @@ export default function AdminSettingsPage() {
             Gérez votre boutique, vos vendeurs et personnalisez l'application
           </p>
         </div>
-        <Button variant="outline" onClick={() => window.location.reload()}>
+        <Button variant="outline" onClick={fetchAllData}>
           <RefreshCw className="h-4 w-4 mr-2" />
           Actualiser
         </Button>
@@ -494,6 +670,10 @@ export default function AdminSettingsPage() {
           <TabsTrigger value="appearance">
             <Palette className="h-4 w-4 mr-2" />
             Apparence
+          </TabsTrigger>
+          <TabsTrigger value="reports">
+            <DollarSign className="h-4 w-4 mr-2" />
+            Rapports
           </TabsTrigger>
           <TabsTrigger value="security">
             <Shield className="h-4 w-4 mr-2" />
@@ -529,13 +709,23 @@ export default function AdminSettingsPage() {
                     <div className="grid gap-4 py-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label>Nom complet *</Label>
+                          <Label>Nom *</Label>
                           <Input
-                            value={formData.name || ""}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            placeholder="Jean Dupont"
+                            value={formData.nom || ""}
+                            onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
+                            placeholder="Dupont"
                           />
                         </div>
+                        <div className="space-y-2">
+                          <Label>Prénom *</Label>
+                          <Input
+                            value={formData.prenom || ""}
+                            onChange={(e) => setFormData({ ...formData, prenom: e.target.value })}
+                            placeholder="Jean"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Email *</Label>
                           <Input
@@ -545,16 +735,16 @@ export default function AdminSettingsPage() {
                             placeholder="jean@boutique.com"
                           />
                         </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Téléphone</Label>
                           <Input
-                            value={formData.phone || ""}
-                            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                            value={formData.telephone || ""}
+                            onChange={(e) => setFormData({ ...formData, telephone: e.target.value })}
                             placeholder="+33 6 12 34 56 78"
                           />
                         </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Rôle *</Label>
                           <Select
@@ -572,6 +762,14 @@ export default function AdminSettingsPage() {
                             </SelectContent>
                           </Select>
                         </div>
+                        <div className="space-y-2">
+                          <Label>Date d'embauche</Label>
+                          <Input
+                            type="date"
+                            value={formData.date_embauche || new Date().toISOString().split("T")[0]}
+                            onChange={(e) => setFormData({ ...formData, date_embauche: e.target.value })}
+                          />
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
@@ -583,11 +781,11 @@ export default function AdminSettingsPage() {
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label>Taux horaire (€)</Label>
+                          <Label>Salaire horaire (€)</Label>
                           <Input
                             type="number"
-                            value={formData.hourlyRate || 12}
-                            onChange={(e) => setFormData({ ...formData, hourlyRate: parseFloat(e.target.value) })}
+                            value={formData.salaire_horaire || 12}
+                            onChange={(e) => setFormData({ ...formData, salaire_horaire: parseFloat(e.target.value) })}
                           />
                         </div>
                       </div>
@@ -595,76 +793,21 @@ export default function AdminSettingsPage() {
                         <Label>Objectif de vente (€/mois)</Label>
                         <Input
                           type="number"
-                          value={formData.salesTarget || 5000}
-                          onChange={(e) => setFormData({ ...formData, salesTarget: parseFloat(e.target.value) })}
+                          value={formData.objectif_vente || 5000}
+                          onChange={(e) => setFormData({ ...formData, objectif_vente: parseFloat(e.target.value) })}
                         />
                       </div>
-                      <Separator />
-                      <div>
-                        <Label className="mb-2 block">Permissions</Label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="viewSales"
-                              checked={formData.permissions?.viewSales ?? true}
-                              onCheckedChange={(checked) => 
-                                setFormData({ ...formData, permissions: { ...formData.permissions, viewSales: !!checked } })
-                              }
-                            />
-                            <Label htmlFor="viewSales">Voir les ventes</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="editProducts"
-                              checked={formData.permissions?.editProducts ?? false}
-                              onCheckedChange={(checked) => 
-                                setFormData({ ...formData, permissions: { ...formData.permissions, editProducts: !!checked } })
-                              }
-                            />
-                            <Label htmlFor="editProducts">Modifier les produits</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="manageStock"
-                              checked={formData.permissions?.manageStock ?? false}
-                              onCheckedChange={(checked) => 
-                                setFormData({ ...formData, permissions: { ...formData.permissions, manageStock: !!checked } })
-                              }
-                            />
-                            <Label htmlFor="manageStock">Gérer les stocks</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="viewReports"
-                              checked={formData.permissions?.viewReports ?? false}
-                              onCheckedChange={(checked) => 
-                                setFormData({ ...formData, permissions: { ...formData.permissions, viewReports: !!checked } })
-                              }
-                            />
-                            <Label htmlFor="viewReports">Voir les rapports</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="manageUsers"
-                              checked={formData.permissions?.manageUsers ?? false}
-                              onCheckedChange={(checked) => 
-                                setFormData({ ...formData, permissions: { ...formData.permissions, manageUsers: !!checked } })
-                              }
-                            />
-                            <Label htmlFor="manageUsers">Gérer les utilisateurs</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="manageSettings"
-                              checked={formData.permissions?.manageSettings ?? false}
-                              onCheckedChange={(checked) => 
-                                setFormData({ ...formData, permissions: { ...formData.permissions, manageSettings: !!checked } })
-                              }
-                            />
-                            <Label htmlFor="manageSettings">Gérer les paramètres</Label>
-                          </div>
+                      {!editingSeller && (
+                        <div className="space-y-2">
+                          <Label>Mot de passe temporaire</Label>
+                          <Input
+                            type="password"
+                            value={formData.password || ""}
+                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            placeholder="Laissez vide pour un mot de passe par défaut"
+                          />
                         </div>
-                      </div>
+                      )}
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
@@ -765,26 +908,26 @@ export default function AdminSettingsPage() {
                           <div className="flex items-center gap-3">
                             <Avatar className="h-8 w-8">
                               <AvatarFallback className="bg-primary/10 text-primary">
-                                {seller.name.split(" ").map(n => n[0]).join("")}
+                                {seller.nom?.[0]}{seller.prenom?.[0]}
                               </AvatarFallback>
                             </Avatar>
                             <div>
-                              <p className="font-medium">{seller.name}</p>
-                              <p className="text-xs text-muted-foreground">{seller.id}</p>
+                              <p className="font-medium">{seller.nom} {seller.prenom}</p>
+                              <p className="text-xs text-muted-foreground">{seller.code}</p>
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="text-sm">
                             <p>{seller.email}</p>
-                            <p className="text-muted-foreground">{seller.phone}</p>
+                            <p className="text-muted-foreground">{seller.telephone}</p>
                           </div>
                         </TableCell>
                         <TableCell>{getRoleBadge(seller.role)}</TableCell>
-                        <TableCell>{seller.commission}%</TableCell>
-                        <TableCell>${seller.salesTarget?.toLocaleString()}</TableCell>
+                        <TableCell>{seller.commission || 0}%</TableCell>
+                        <TableCell>{formatMoney(seller.objectif_vente, invoiceSettings.symbole_devise)}</TableCell>
                         <TableCell>{getStatusBadge(seller.status)}</TableCell>
-                        <TableCell>{seller.hireDate}</TableCell>
+                        <TableCell>{seller.date_embauche}</TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -793,11 +936,15 @@ export default function AdminSettingsPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openEditDialog(seller)}>
+                              <DropdownMenuItem onClick={() => {
+                                setEditingSeller(seller)
+                                setFormData(seller)
+                                setIsDialogOpen(true)
+                              }}>
                                 <Edit className="h-4 w-4 mr-2" />
                                 Modifier
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleToggleStatus(seller.id)}>
+                              <DropdownMenuItem onClick={() => handleToggleStatus(seller.id, seller.status)}>
                                 {seller.status === "active" ? (
                                   <>
                                     <EyeOff className="h-4 w-4 mr-2" />
@@ -844,8 +991,8 @@ export default function AdminSettingsPage() {
                 <div className="space-y-2">
                   <Label>Nom de la boutique *</Label>
                   <Input
-                    value={storeInfo.name}
-                    onChange={(e) => setStoreInfo({ ...storeInfo, name: e.target.value })}
+                    value={storeInfo.nom}
+                    onChange={(e) => setStoreInfo({ ...storeInfo, nom: e.target.value })}
                     placeholder="Ma Boutique"
                   />
                 </div>
@@ -865,8 +1012,8 @@ export default function AdminSettingsPage() {
                 <div className="space-y-2">
                   <Label>Adresse</Label>
                   <Textarea
-                    value={storeInfo.address}
-                    onChange={(e) => setStoreInfo({ ...storeInfo, address: e.target.value })}
+                    value={storeInfo.adresse}
+                    onChange={(e) => setStoreInfo({ ...storeInfo, adresse: e.target.value })}
                     placeholder="Adresse complète"
                     rows={2}
                   />
@@ -874,8 +1021,8 @@ export default function AdminSettingsPage() {
                 <div className="space-y-2">
                   <Label>Téléphone</Label>
                   <Input
-                    value={storeInfo.phone}
-                    onChange={(e) => setStoreInfo({ ...storeInfo, phone: e.target.value })}
+                    value={storeInfo.telephone}
+                    onChange={(e) => setStoreInfo({ ...storeInfo, telephone: e.target.value })}
                     placeholder="+33 1 23 45 67 89"
                   />
                 </div>
@@ -891,41 +1038,42 @@ export default function AdminSettingsPage() {
                 <div className="space-y-2">
                   <Label>Site web</Label>
                   <Input
-                    value={storeInfo.website}
-                    onChange={(e) => setStoreInfo({ ...storeInfo, website: e.target.value })}
+                    value={storeInfo.site_web}
+                    onChange={(e) => setStoreInfo({ ...storeInfo, site_web: e.target.value })}
                     placeholder="www.boutique.com"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Numéro de TVA</Label>
                   <Input
-                    value={storeInfo.taxNumber}
-                    onChange={(e) => setStoreInfo({ ...storeInfo, taxNumber: e.target.value })}
+                    value={storeInfo.numero_tva}
+                    onChange={(e) => setStoreInfo({ ...storeInfo, numero_tva: e.target.value })}
                     placeholder="FR123456789"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Devise</Label>
                   <Select
-                    value={storeInfo.currency}
-                    onValueChange={(value) => setStoreInfo({ ...storeInfo, currency: value })}
+                    value={storeInfo.devise}
+                    onValueChange={(value) => setStoreInfo({ ...storeInfo, devise: value })}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="EUR">Euro (€)</SelectItem>
-                      <SelectItem value="USD">Dollar ($)</SelectItem>
-                      <SelectItem value="GBP">Livre (£)</SelectItem>
-                      <SelectItem value="XAF">Franc CFA (FCFA)</SelectItem>
+                      {devises.map(devise => (
+                        <SelectItem key={devise.id} value={devise.code}>
+                          {devise.symbole} - {devise.code} - {devise.nom}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Fuseau horaire</Label>
                   <Select
-                    value={storeInfo.timezone}
-                    onValueChange={(value) => setStoreInfo({ ...storeInfo, timezone: value })}
+                    value={storeInfo.fuseau_horaire}
+                    onValueChange={(value) => setStoreInfo({ ...storeInfo, fuseau_horaire: value })}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -944,60 +1092,66 @@ export default function AdminSettingsPage() {
               <div>
                 <Label className="mb-3 block">Horaires d'ouverture</Label>
                 <div className="space-y-2">
-                  {Object.entries(storeInfo.businessHours).map(([day, hours]) => (
-                    <div key={day} className="flex items-center gap-4 p-2 bg-muted/20 rounded-lg">
-                      <div className="w-32 font-medium capitalize">{day}</div>
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id={`closed-${day}`}
-                          checked={hours.closed}
-                          onCheckedChange={(checked) => 
-                            setStoreInfo({
-                              ...storeInfo,
-                              businessHours: {
-                                ...storeInfo.businessHours,
-                                [day]: { ...hours, closed: !!checked }
+                  {joursSemaine.map((jour, index) => {
+                    const hours = storeHours.find(h => h.jour === jour) || { jour, ouverture: "09:00", fermeture: "19:00", ferme: jour === "dimanche" }
+                    return (
+                      <div key={jour} className="flex items-center gap-4 p-2 bg-muted/20 rounded-lg">
+                        <div className="w-32 font-medium capitalize">{jour}</div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id={`closed-${jour}`}
+                            checked={hours.ferme}
+                            onCheckedChange={(checked) => {
+                              const newHours = [...storeHours]
+                              const existing = newHours.find(h => h.jour === jour)
+                              if (existing) {
+                                existing.ferme = !!checked
+                              } else {
+                                newHours.push({ ...hours, ferme: !!checked })
                               }
-                            })
-                          }
-                        />
-                        <Label htmlFor={`closed-${day}`}>Fermé</Label>
+                              setStoreHours(newHours)
+                            }}
+                          />
+                          <Label htmlFor={`closed-${jour}`}>Fermé</Label>
+                        </div>
+                        {!hours.ferme && (
+                          <>
+                            <Input
+                              type="time"
+                              value={hours.ouverture}
+                              onChange={(e) => {
+                                const newHours = [...storeHours]
+                                const existing = newHours.find(h => h.jour === jour)
+                                if (existing) {
+                                  existing.ouverture = e.target.value
+                                } else {
+                                  newHours.push({ ...hours, ouverture: e.target.value })
+                                }
+                                setStoreHours(newHours)
+                              }}
+                              className="w-32"
+                            />
+                            <span>→</span>
+                            <Input
+                              type="time"
+                              value={hours.fermeture}
+                              onChange={(e) => {
+                                const newHours = [...storeHours]
+                                const existing = newHours.find(h => h.jour === jour)
+                                if (existing) {
+                                  existing.fermeture = e.target.value
+                                } else {
+                                  newHours.push({ ...hours, fermeture: e.target.value })
+                                }
+                                setStoreHours(newHours)
+                              }}
+                              className="w-32"
+                            />
+                          </>
+                        )}
                       </div>
-                      {!hours.closed && (
-                        <>
-                          <Input
-                            type="time"
-                            value={hours.open}
-                            onChange={(e) => 
-                              setStoreInfo({
-                                ...storeInfo,
-                                businessHours: {
-                                  ...storeInfo.businessHours,
-                                  [day]: { ...hours, open: e.target.value }
-                                }
-                              })
-                            }
-                            className="w-32"
-                          />
-                          <span>→</span>
-                          <Input
-                            type="time"
-                            value={hours.close}
-                            onChange={(e) => 
-                              setStoreInfo({
-                                ...storeInfo,
-                                businessHours: {
-                                  ...storeInfo.businessHours,
-                                  [day]: { ...hours, close: e.target.value }
-                                }
-                              })
-                            }
-                            className="w-32"
-                          />
-                        </>
-                      )}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
 
@@ -1025,26 +1179,24 @@ export default function AdminSettingsPage() {
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
-                      value={alertSettings.lowStockThreshold}
-                      onChange={(e) => setAlertSettings({ ...alertSettings, lowStockThreshold: parseInt(e.target.value) })}
+                      value={alertSettings.seuil_stock_faible}
+                      onChange={(e) => setAlertSettings({ ...alertSettings, seuil_stock_faible: parseInt(e.target.value) })}
                       className="w-32"
                     />
                     <span className="text-muted-foreground">unités</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">Alerte quand le stock descend en dessous de ce seuil</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Seuil critique</Label>
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
-                      value={alertSettings.criticalStockThreshold}
-                      onChange={(e) => setAlertSettings({ ...alertSettings, criticalStockThreshold: parseInt(e.target.value) })}
+                      value={alertSettings.seuil_stock_critique}
+                      onChange={(e) => setAlertSettings({ ...alertSettings, seuil_stock_critique: parseInt(e.target.value) })}
                       className="w-32"
                     />
                     <span className="text-muted-foreground">unités</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">Alerte critique quand le stock est très bas</p>
                 </div>
               </div>
 
@@ -1057,8 +1209,8 @@ export default function AdminSettingsPage() {
                     <p className="text-sm text-muted-foreground">Notification quand un produit est en rupture</p>
                   </div>
                   <Switch
-                    checked={alertSettings.outOfStockAlert}
-                    onCheckedChange={(checked) => setAlertSettings({ ...alertSettings, outOfStockAlert: checked })}
+                    checked={alertSettings.alerte_rupture}
+                    onCheckedChange={(checked) => setAlertSettings({ ...alertSettings, alerte_rupture: checked })}
                   />
                 </div>
                 <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
@@ -1067,8 +1219,8 @@ export default function AdminSettingsPage() {
                     <p className="text-sm text-muted-foreground">Notification quand un produit atteint le seuil faible</p>
                   </div>
                   <Switch
-                    checked={alertSettings.lowStockAlert}
-                    onCheckedChange={(checked) => setAlertSettings({ ...alertSettings, lowStockAlert: checked })}
+                    checked={alertSettings.alerte_stock_faible}
+                    onCheckedChange={(checked) => setAlertSettings({ ...alertSettings, alerte_stock_faible: checked })}
                   />
                 </div>
               </div>
@@ -1082,8 +1234,8 @@ export default function AdminSettingsPage() {
                     <p className="text-sm text-muted-foreground">Reçu chaque matin à 8h00</p>
                   </div>
                   <Switch
-                    checked={alertSettings.dailyReportEmail}
-                    onCheckedChange={(checked) => setAlertSettings({ ...alertSettings, dailyReportEmail: checked })}
+                    checked={alertSettings.rapport_quotidien}
+                    onCheckedChange={(checked) => setAlertSettings({ ...alertSettings, rapport_quotidien: checked })}
                   />
                 </div>
                 <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
@@ -1092,21 +1244,21 @@ export default function AdminSettingsPage() {
                     <p className="text-sm text-muted-foreground">Reçu chaque lundi</p>
                   </div>
                   <Switch
-                    checked={alertSettings.weeklyReportEmail}
-                    onCheckedChange={(checked) => setAlertSettings({ ...alertSettings, weeklyReportEmail: checked })}
+                    checked={alertSettings.rapport_hebdomadaire}
+                    onCheckedChange={(checked) => setAlertSettings({ ...alertSettings, rapport_hebdomadaire: checked })}
                   />
                 </div>
                 <div className="space-y-2 mt-3">
                   <Label>Destinataires des rapports</Label>
                   <div className="flex flex-wrap gap-2">
-                    {alertSettings.reportRecipients.map((email, idx) => (
+                    {alertSettings.destinataires_rapports.map((email, idx) => (
                       <Badge key={idx} variant="secondary" className="gap-1">
                         {email}
                         <button
                           onClick={() => {
                             setAlertSettings({
                               ...alertSettings,
-                              reportRecipients: alertSettings.reportRecipients.filter((_, i) => i !== idx)
+                              destinataires_rapports: alertSettings.destinataires_rapports.filter((_, i) => i !== idx)
                             })
                           }}
                           className="ml-1 hover:text-red-500"
@@ -1123,7 +1275,7 @@ export default function AdminSettingsPage() {
                         if (email) {
                           setAlertSettings({
                             ...alertSettings,
-                            reportRecipients: [...alertSettings.reportRecipients, email]
+                            destinataires_rapports: [...alertSettings.destinataires_rapports, email]
                           })
                         }
                       }}
@@ -1157,22 +1309,22 @@ export default function AdminSettingsPage() {
                 <div className="space-y-2">
                   <Label>En-tête du ticket</Label>
                   <Input
-                    value={invoiceSettings.headerText}
-                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, headerText: e.target.value })}
+                    value={invoiceSettings.en_tete_ticket}
+                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, en_tete_ticket: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Pied de page du ticket</Label>
                   <Input
-                    value={invoiceSettings.footerText}
-                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, footerText: e.target.value })}
+                    value={invoiceSettings.pied_page_ticket}
+                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, pied_page_ticket: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Préfixe des factures</Label>
                   <Input
-                    value={invoiceSettings.invoicePrefix}
-                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, invoicePrefix: e.target.value })}
+                    value={invoiceSettings.prefixe_facture}
+                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, prefixe_facture: e.target.value })}
                     placeholder="INV"
                   />
                 </div>
@@ -1180,23 +1332,23 @@ export default function AdminSettingsPage() {
                   <Label>Prochain numéro de facture</Label>
                   <Input
                     type="number"
-                    value={invoiceSettings.nextInvoiceNumber}
-                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, nextInvoiceNumber: parseInt(e.target.value) })}
+                    value={invoiceSettings.prochain_numero}
+                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, prochain_numero: parseInt(e.target.value) })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Taux de TVA (%)</Label>
                   <Input
                     type="number"
-                    value={invoiceSettings.taxRate}
-                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, taxRate: parseFloat(e.target.value) })}
+                    value={invoiceSettings.taux_tva}
+                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, taux_tva: parseFloat(e.target.value) })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Symbole de la devise</Label>
                   <Input
-                    value={invoiceSettings.currencySymbol}
-                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, currencySymbol: e.target.value })}
+                    value={invoiceSettings.symbole_devise}
+                    onChange={(e) => setInvoiceSettings({ ...invoiceSettings, symbole_devise: e.target.value })}
                     placeholder="€"
                     className="w-20"
                   />
@@ -1206,8 +1358,8 @@ export default function AdminSettingsPage() {
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="showTaxDetails"
-                  checked={invoiceSettings.showTaxDetails}
-                  onCheckedChange={(checked) => setInvoiceSettings({ ...invoiceSettings, showTaxDetails: !!checked })}
+                  checked={invoiceSettings.afficher_tva}
+                  onCheckedChange={(checked) => setInvoiceSettings({ ...invoiceSettings, afficher_tva: !!checked })}
                 />
                 <Label htmlFor="showTaxDetails">Afficher les détails de la TVA sur les tickets</Label>
               </div>
@@ -1218,35 +1370,35 @@ export default function AdminSettingsPage() {
                 <Label className="mb-2 block">Aperçu du ticket</Label>
                 <div className="border rounded-lg p-4 bg-muted/20 font-mono text-sm">
                   <div className="text-center border-b pb-2 mb-2">
-                    <p className="font-bold">{storeInfo.name}</p>
-                    <p className="text-xs">{storeInfo.address}</p>
-                    <p className="text-xs">Tel: {storeInfo.phone}</p>
+                    <p className="font-bold">{storeInfo.nom || "Ma Boutique"}</p>
+                    <p className="text-xs">{storeInfo.adresse}</p>
+                    <p className="text-xs">Tel: {storeInfo.telephone}</p>
                   </div>
-                  <p className="text-center text-xs text-muted-foreground mb-2">{invoiceSettings.headerText}</p>
+                  <p className="text-center text-xs text-muted-foreground mb-2">{invoiceSettings.en_tete_ticket}</p>
                   <div className="space-y-1">
                     <div className="flex justify-between">
                       <span>Produit 1</span>
-                      <span>10.00{invoiceSettings.currencySymbol}</span>
+                      <span>10.00{invoiceSettings.symbole_devise}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Produit 2</span>
-                      <span>15.00{invoiceSettings.currencySymbol}</span>
+                      <span>15.00{invoiceSettings.symbole_devise}</span>
                     </div>
                     <div className="border-t my-2"></div>
                     <div className="flex justify-between font-bold">
                       <span>TOTAL</span>
-                      <span>25.00{invoiceSettings.currencySymbol}</span>
+                      <span>25.00{invoiceSettings.symbole_devise}</span>
                     </div>
-                    {invoiceSettings.showTaxDetails && (
+                    {invoiceSettings.afficher_tva && (
                       <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Dont TVA ({invoiceSettings.taxRate}%)</span>
-                        <span>4.17{invoiceSettings.currencySymbol}</span>
+                        <span>Dont TVA ({invoiceSettings.taux_tva}%)</span>
+                        <span>4.17{invoiceSettings.symbole_devise}</span>
                       </div>
                     )}
                   </div>
-                  <p className="text-center text-xs text-muted-foreground mt-2">{invoiceSettings.footerText}</p>
+                  <p className="text-center text-xs text-muted-foreground mt-2">{invoiceSettings.pied_page_ticket}</p>
                   <div className="text-center border-t pt-2 mt-2 text-xs">
-                    <p>N° {invoiceSettings.invoicePrefix}-{invoiceSettings.nextInvoiceNumber}</p>
+                    <p>N° {invoiceSettings.prefixe_facture}-{invoiceSettings.prochain_numero}</p>
                     <p>{new Date().toLocaleDateString()}</p>
                   </div>
                 </div>
@@ -1303,24 +1455,24 @@ export default function AdminSettingsPage() {
                 <div className="flex items-center gap-3">
                   <Input
                     type="color"
-                    value={appearance.primaryColor}
-                    onChange={(e) => setAppearance({ ...appearance, primaryColor: e.target.value })}
+                    value={appearance.couleur_principale}
+                    onChange={(e) => setAppearance({ ...appearance, couleur_principale: e.target.value })}
                     className="w-16 h-10 p-1"
                   />
                   <Input
-                    value={appearance.primaryColor}
-                    onChange={(e) => setAppearance({ ...appearance, primaryColor: e.target.value })}
+                    value={appearance.couleur_principale}
+                    onChange={(e) => setAppearance({ ...appearance, couleur_principale: e.target.value })}
                     className="w-32"
                   />
-                  <div className="w-8 h-8 rounded-full" style={{ backgroundColor: appearance.primaryColor }} />
+                  <div className="w-8 h-8 rounded-full" style={{ backgroundColor: appearance.couleur_principale }} />
                 </div>
               </div>
 
               <div className="space-y-3">
                 <Label>Densité des tableaux</Label>
                 <RadioGroup
-                  value={appearance.tableDensity}
-                  onValueChange={(value: any) => setAppearance({ ...appearance, tableDensity: value })}
+                  value={appearance.densite_tableau}
+                  onValueChange={(value: any) => setAppearance({ ...appearance, densite_tableau: value })}
                   className="flex gap-4"
                 >
                   <div className="flex items-center space-x-2">
@@ -1344,8 +1496,8 @@ export default function AdminSettingsPage() {
                   <p className="text-sm text-muted-foreground">Activer les animations et transitions</p>
                 </div>
                 <Switch
-                  checked={appearance.showAnimations}
-                  onCheckedChange={(checked) => setAppearance({ ...appearance, showAnimations: checked })}
+                  checked={appearance.animations}
+                  onCheckedChange={(checked) => setAppearance({ ...appearance, animations: checked })}
                 />
               </div>
 
@@ -1358,6 +1510,90 @@ export default function AdminSettingsPage() {
         </TabsContent>
 
         {/* ==================== ONGLET SÉCURITÉ ==================== */}
+        {/* ==================== ONGLET RAPPORTS ==================== */}
+        <TabsContent value="reports">
+          <Card>
+            <CardHeader>
+              <CardTitle>Rapports de Ventes</CardTitle>
+              <CardDescription>
+                Consultez les ventes et le bénéfice sur une période ou par jour
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Date de début</Label>
+                  <Input type="date" value={reportStart} onChange={(e) => setReportStart(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Date de fin</Label>
+                  <Input type="date" value={reportEnd} onChange={(e) => setReportEnd(e.target.value)} />
+                </div>
+                <div className="flex items-end gap-2">
+                  <Button onClick={handleFetchReport} className="w-full">
+                    <Search className="h-4 w-4 mr-2" />
+                    Générer
+                  </Button>
+                  <Button variant="outline" onClick={() => { setReportStart(""); setReportEnd(""); setReportData(null) }}>
+                    Réinitialiser
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Ventes:</p>
+                  <p className="text-2xl font-bold">{reportData && typeof reportData.total_amount !== 'undefined' ? formatMoney(reportData.total_amount, invoiceSettings.symbole_devise) : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Bénéfice:</p>
+                  <p className="text-2xl font-bold">{reportData && typeof reportData.total_profit !== 'undefined' ? formatMoney(reportData.total_profit, invoiceSettings.symbole_devise) : '—'}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handlePrintReport} disabled={!reportData}>
+                    Imprimer
+                  </Button>
+                </div>
+              </div>
+
+              <Separator />
+              {reportData && (!reportData.sales || reportData.sales.length === 0) && (
+                <div className="p-4 text-center text-sm text-muted-foreground">Aucune vente pour la période sélectionnée.</div>
+              )}
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Id</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead>Bénéfice</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportData && reportData.sales && reportData.sales.map((s: any) => (
+                      <TableRow key={s.id}>
+                        <TableCell>{s.id}</TableCell>
+                        <TableCell>{new Date(s.created_at).toLocaleString()}</TableCell>
+                        <TableCell>{s.client_name || s.client?.nom || '—'}</TableCell>
+                        <TableCell>{formatMoney(s.total || 0, invoiceSettings.symbole_devise)}</TableCell>
+                        <TableCell>{formatMoney(s.profit || 0, invoiceSettings.symbole_devise)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" onClick={() => printInvoice(s)}>
+                            Imprimer
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="security">
           <Card>
             <CardHeader>
@@ -1380,7 +1616,7 @@ export default function AdminSettingsPage() {
                     <p className="font-medium">Changer le mot de passe</p>
                     <p className="text-sm text-muted-foreground">Modifiez votre mot de passe actuel</p>
                   </div>
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={() => toast.info("Fonctionnalité à venir")}>
                     <Key className="h-4 w-4 mr-2" />
                     Modifier
                   </Button>
@@ -1391,7 +1627,15 @@ export default function AdminSettingsPage() {
                     <p className="font-medium">Authentification à deux facteurs</p>
                     <p className="text-sm text-muted-foreground">Sécurisez votre compte avec 2FA</p>
                   </div>
-                  <Switch />
+                  <Switch onCheckedChange={() => toast.info("Fonctionnalité à venir")} />
+                </div>
+
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <p className="font-medium">Créer un administrateur</p>
+                    <p className="text-sm text-muted-foreground">Créer un compte admin (utiliser la clé secrète)</p>
+                  </div>
+                  <Button variant="outline" onClick={createAdmin}>Créer</Button>
                 </div>
 
                 <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -1399,7 +1643,7 @@ export default function AdminSettingsPage() {
                     <p className="font-medium">Sessions actives</p>
                     <p className="text-sm text-muted-foreground">Gérez vos sessions ouvertes</p>
                   </div>
-                  <Button variant="outline">Voir les sessions</Button>
+                  <Button variant="outline" onClick={() => toast.info("Fonctionnalité à venir")}>Voir les sessions</Button>
                 </div>
 
                 <div className="flex items-center justify-between p-3 border rounded-lg border-red-200 bg-red-50 dark:bg-red-900/20">
@@ -1407,7 +1651,7 @@ export default function AdminSettingsPage() {
                     <p className="font-medium text-red-600">Déconnexion de tous les appareils</p>
                     <p className="text-sm text-muted-foreground">Déconnectez-vous de tous les appareils</p>
                   </div>
-                  <Button variant="destructive" size="sm">
+                  <Button variant="destructive" size="sm" onClick={() => toast.info("Fonctionnalité à venir")}>
                     <LogOut className="h-4 w-4 mr-2" />
                     Tout déconnecter
                   </Button>
@@ -1428,16 +1672,16 @@ export default function AdminSettingsPage() {
                   <div className="flex justify-between items-center p-2 text-sm border-b">
                     <div className="flex items-center gap-2">
                       <UserPlus className="h-4 w-4 text-blue-500" />
-                      <span>Ajout du vendeur Thomas Bernard</span>
+                      <span>Ajout d'un nouveau vendeur</span>
                     </div>
-                    <span className="text-muted-foreground">2024-01-15 14:30</span>
+                    <span className="text-muted-foreground">{new Date(Date.now() - 86400000).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center p-2 text-sm border-b">
                     <div className="flex items-center gap-2">
                       <Edit className="h-4 w-4 text-amber-500" />
                       <span>Modification des paramètres</span>
                     </div>
-                    <span className="text-muted-foreground">2024-01-14 09:22</span>
+                    <span className="text-muted-foreground">{new Date(Date.now() - 172800000).toLocaleString()}</span>
                   </div>
                 </div>
               </div>

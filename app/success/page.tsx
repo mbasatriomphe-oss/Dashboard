@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Check, Printer, AlertCircle, Home } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import formatMoney from "@/lib/formatMoney"
 import { Separator } from "@/components/ui/separator"
 import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -82,17 +83,13 @@ function SuccessContent() {
           <div className="space-y-3">
             <div className="flex justify-between text-foreground">
               <p className="font-medium">Montant payé</p>
-              <p className="font-bold text-lg text-emerald-600 dark:text-emerald-400">
-                ${amountPaid.toFixed(2)}
-              </p>
+              <p className="font-bold text-lg text-emerald-600 dark:text-emerald-400">{formatMoney(amountPaid)}</p>
             </div>
 
             {hasPartialPayment && (
               <div className="flex justify-between text-foreground">
                 <p className="font-medium">Reste à payer</p>
-                <p className="font-bold text-lg text-amber-600 dark:text-amber-400">
-                  ${remainingBalance.toFixed(2)}
-                </p>
+                <p className="font-bold text-lg text-amber-600 dark:text-amber-400">{formatMoney(remainingBalance)}</p>
               </div>
             )}
           </div>
@@ -104,7 +101,7 @@ function SuccessContent() {
               <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
                 <AlertCircle className="h-4 w-4 text-amber-600" />
                 <AlertDescription className="text-amber-800 dark:text-amber-200">
-                  Il s'agit d'un paiement partiel. Le client doit encore <strong>${remainingBalance.toFixed(2)}</strong> pour terminer cette commande.
+                  Il s'agit d'un paiement partiel. Le client doit encore <strong>{formatMoney(remainingBalance)}</strong> pour terminer cette commande.
                 </AlertDescription>
               </Alert>
             </>

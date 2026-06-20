@@ -5,6 +5,7 @@ import { Minus, Plus, ShoppingCart, Trash2, User, Tag } from "lucide-react"
 import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import formatMoney from "@/lib/formatMoney"
 import { useCart } from "../context/cart-context"
 import CustomerModal from "./customer-modal"
 import DiscountModal from "./discount-modal"
@@ -75,9 +76,9 @@ export default function CartSidebar() {
                 <div className="flex min-w-0 flex-1 flex-col">
                   <div className="flex gap-2 justify-between">
                     <h3 className="min-w-0 flex-1 truncate font-medium">{item.name}</h3>
-                    <p className="shrink-0 font-medium">{currencySymbol}{(item.price * item.quantity).toFixed(2)}</p>
+                    <p className="shrink-0 font-medium">{formatMoney(item.price * item.quantity, item.currencySymbol ?? currencySymbol)}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground sm:text-sm">{item.currencySymbol ?? currencySymbol}{item.price.toFixed(2)} chacun</p>
+                  <p className="text-xs text-muted-foreground sm:text-sm">{formatMoney(item.price, item.currencySymbol ?? currencySymbol)} chacun</p>
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <div className="flex items-center">
                       <Button
@@ -116,19 +117,19 @@ export default function CartSidebar() {
 
       <div className="border-t p-3 sm:p-4">
         <div className="mb-4 space-y-2">
-          <div className="flex justify-between">
+            <div className="flex justify-between">
             <p>Sous-total</p>
-            <p>{currencySymbol}{cartTotal.toFixed(2)}</p>
+            <p>{formatMoney(cartTotal, currencySymbol)}</p>
           </div>
           {discountAmount > 0 && (
             <div className="flex justify-between text-green-600">
               <p>Remise</p>
-              <p>-{currencySymbol}{discountAmount.toFixed(2)}</p>
+              <p>-{formatMoney(discountAmount, currencySymbol)}</p>
             </div>
           )}
           <div className="flex justify-between font-medium">
             <p>Total</p>
-            <p>{currencySymbol}{(cartTotal - discountAmount).toFixed(2)}</p>
+            <p>{formatMoney(cartTotal - discountAmount, currencySymbol)}</p>
           </div>
         </div>
         <Button className="w-full" size="lg" disabled={cart.length === 0} onClick={handleCheckout}>

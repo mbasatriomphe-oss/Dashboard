@@ -9,6 +9,7 @@ import {
   TrendingUp, Truck, X
 } from "lucide-react"
 import { backendRequest } from "@/app/services/backend"
+import formatMoney from "@/lib/formatMoney"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -120,6 +121,10 @@ export default function VentesPage() {
   const [filterClient, setFilterClient] = useState("all")
   const [filterVendeur, setFilterVendeur] = useState("all")
   const [filterDate, setFilterDate] = useState("")
+  const [filterStartDate, setFilterStartDate] = useState("")
+  const [filterEndDate, setFilterEndDate] = useState("")
+  const [invoiceSettings, setInvoiceSettings] = useState<any>(null)
+  const [storeInfo, setStoreInfo] = useState<any>(null)
   const [prodSearch, setProdSearch] = useState("")
   const [showDialog, setShowDialog] = useState(false)
   const [editing, setEditing] = useState<Vente | null>(null)
@@ -144,6 +149,8 @@ export default function VentesPage() {
       backendRequest<{ data: Vendeur[] }>("/vendeurs?per_page=all"),
       backendRequest<{ data: Devise[] }>("/devises?per_page=all"),
       backendRequest<{ data: Array<{ id: number; code: string; nom: string; stock_actuel?: number | string }> }>("/stocks/disponible"),
+      backendRequest('/parametres/facturation').catch(() => ({ data: null })),
+      backendRequest('/parametres/boutique').catch(() => ({ data: null })),
     ])
     setClients(cRes.data ?? [])
     setVendeurs(vRes.data ?? [])
@@ -154,9 +161,12 @@ export default function VentesPage() {
       nom: row.nom,
       stock: Number(row.stock_actuel ?? 0),
     })))
+    // last two may be invoice/store
+    try { const inv = await backendRequest('/parametres/facturation'); setInvoiceSettings(inv.data ?? null) } catch {};
+    try { const st = await backendRequest('/parametres/boutique'); setStoreInfo(st.data ?? null) } catch {};
   }, [])
 
-  const fetchVentes = useCallback(async (q = "", paymentFilter = "", clientFilter = "", dateFilter = "", vendeurFilter = "") => {
+  const fetchVentes = useCallback(async (q = "", paymentFilter = "", clientFilter = "", dateFilter = "", vendeurFilter = "", start = "", end = "") => {
     setIsLoading(true)
     setError("")
     try {
@@ -166,6 +176,8 @@ export default function VentesPage() {
       if (clientFilter && clientFilter !== 'all') params.set('id_client', clientFilter)
       if (vendeurFilter && vendeurFilter !== 'all') params.set('id_vendeur', vendeurFilter)
       if (dateFilter) params.set('date', dateFilter)
+      if (start) params.set('date_debut', start)
+      if (end) params.set('date_fin', end)
       const res = await backendRequest<{ data: Vente[] }>(`/ventes?${params}`)
       setVentes((res.data ?? []).map(v => ({ ...v, lignes: v.lignes ?? [] })))
     } catch (e: unknown) {
@@ -176,11 +188,11 @@ export default function VentesPage() {
   }, [])
 
   useEffect(() => {
-    Promise.all([fetchLookups(), fetchVentes("", paymentCurrency, filterClient, filterDate, filterVendeur)])
-  }, [fetchLookups, fetchVentes, paymentCurrency, filterClient, filterDate, filterVendeur])
+    Promise.all([fetchLookups(), fetchVentes("", paymentCurrency, filterClient, filterDate, filterVendeur, filterStartDate, filterEndDate)])
+  }, [fetchLookups, fetchVentes, paymentCurrency, filterClient, filterDate, filterVendeur, filterStartDate, filterEndDate])
 
   useEffect(() => {
-    const t = setTimeout(() => fetchVentes(histSearch, paymentCurrency, filterClient, filterDate, filterVendeur), 300)
+    const t = setTimeout(() => fetchVentes(histSearch, paymentCurrency, filterClient, filterDate, filterVendeur, filterStartDate, filterEndDate), 300)
     return () => clearTimeout(t)
   }, [histSearch, fetchVentes, paymentCurrency, filterClient, filterDate, filterVendeur])
 
@@ -393,6 +405,40 @@ export default function VentesPage() {
     )
   }, [ventes, histSearch])
 
+  const printSelectedSale = (s: Vente) => {
+    const header = storeInfo?.nom || 'Mukingi Accessoir'
+    const symbol = invoiceSettings?.symbole_devise || (s.deviseVente?.symbole ?? (s.lignes?.[0]?.devise?.symbole ?? (typeof window !== 'undefined' ? localStorage.getItem('pos_currency_symbol') || '$' : '$')))
+    const title = `Facture ${s.code ?? s.id}`
+    const rows = (s.lignes ?? []).map(l => `<tr><td>${l.produit?.nom ?? `#${l.id_produit}`}</td><td>${l.quantite}</td><td style="text-align:right">${formatMoney(l.prix_vente, symbol)}</td><td style="text-align:right">${formatMoney(Number(l.quantite) * Number(l.prix_vente), symbol)}</td></tr>`).join('')
+    const html = `
+      <html>
+        <head>
+          <title>${title}</title>
+          <style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px}</style>
+        </head>
+        <body>
+          <h2>${header}</h2>
+          <p>${invoiceSettings?.adresse || ''}</p>
+          <p>Facture N° ${invoiceSettings?.prefixe_facture || ''}-${s.code ?? s.id}</p>
+          <p>Date: ${s.date}</p>
+          <p>Client: ${clientName(s.client)}</p>
+          <table>
+            <thead><tr><th>Produit</th><th>Qté</th><th>Prix</th><th>Total</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <h3>Total: ${formatMoney(s.montant_total ?? s.reste_a_payer ?? 0, symbol)}</h3>
+        </body>
+      </html>
+    `
+    const w = window.open('', '_blank')
+    if (w) {
+      w.document.write(html)
+      w.document.close()
+      w.focus()
+      w.print()
+    }
+  }
+
   const filteredProds = useMemo(() => {
     if (!prodSearch.trim()) return stocks
     const q = prodSearch.toLowerCase()
@@ -452,8 +498,8 @@ export default function VentesPage() {
           { icon: ShoppingCart, label: "Ventes", value: stats.totalVentes, bg: "bg-blue-100", text: "text-blue-600" },
           { icon: Truck, label: "Clients actifs", value: stats.totalClients, bg: "bg-amber-100", text: "text-amber-600" },
           { icon: Layers, label: "Lignes produits", value: stats.totalProduits, bg: "bg-emerald-100", text: "text-emerald-600" },
-          { icon: DollarSign, label: "Montant total", value: stats.totalMontant.toFixed(2), bg: "bg-violet-100", text: "text-violet-600" },
-          { icon: DollarSign, label: "Dettes", value: stats.totalDette.toFixed(2), bg: "bg-rose-100", text: "text-rose-600" },
+          { icon: DollarSign, label: "Montant total", value: formatMoney(stats.totalMontant), bg: "bg-violet-100", text: "text-violet-600" },
+          { icon: DollarSign, label: "Dettes", value: formatMoney(stats.totalDette), bg: "bg-rose-100", text: "text-rose-600" },
           { icon: ShoppingCart, label: "Commandes à crédit", value: stats.ventesEnDette, bg: "bg-orange-100", text: "text-orange-600" },
         ].map(({ icon: Icon, label, value, bg, text }) => (
           <Card key={label}>
@@ -516,8 +562,12 @@ export default function VentesPage() {
                     </Select>
                   </div>
                   <div>
-                    <Label className="text-xs mb-1 block">Date</Label>
-                    <Input type="date" value={filterDate} onChange={e => { setFilterDate(e.target.value); fetchVentes(histSearch, paymentCurrency, filterClient, e.target.value, filterVendeur) }} />
+                    <Label className="text-xs mb-1 block">Date début</Label>
+                    <Input type="date" value={filterStartDate} onChange={e => { setFilterStartDate(e.target.value); fetchVentes(histSearch, paymentCurrency, filterClient, filterDate, filterVendeur, e.target.value, filterEndDate) }} />
+                  </div>
+                  <div>
+                    <Label className="text-xs mb-1 block">Date fin</Label>
+                    <Input type="date" value={filterEndDate} onChange={e => { setFilterEndDate(e.target.value); fetchVentes(histSearch, paymentCurrency, filterClient, filterDate, filterVendeur, filterStartDate, e.target.value) }} />
                   </div>
                 </div>
               </div>
@@ -559,9 +609,9 @@ export default function VentesPage() {
                           <TableCell>{clientName(v.client)}</TableCell>
                           <TableCell>{v.vendeur ? `${v.vendeur.prenom} ${v.vendeur.nom}` : `#${v.id_vendeur}`}</TableCell>
                           <TableCell><Badge variant="secondary">{v.lignes?.length ?? 0}</Badge></TableCell>
-                          <TableCell className="font-semibold text-emerald-600">{saleCurrencySymbol(v)} {montant.toFixed(2)}</TableCell>
-                          <TableCell className="font-semibold text-blue-600">{saleCurrencySymbol(v)} {montantPaye.toFixed(2)}</TableCell>
-                          <TableCell className={reste > 0 ? "font-semibold text-rose-600" : "font-semibold text-emerald-600"}>{saleCurrencySymbol(v)} {reste.toFixed(2)}</TableCell>
+                          <TableCell className="font-semibold text-emerald-600">{formatMoney(montant, saleCurrencySymbol(v))}</TableCell>
+                          <TableCell className="font-semibold text-blue-600">{formatMoney(montantPaye, saleCurrencySymbol(v))}</TableCell>
+                          <TableCell className={reste > 0 ? "font-semibold text-rose-600" : "font-semibold text-emerald-600"}>{formatMoney(reste, saleCurrencySymbol(v))}</TableCell>
                           <TableCell>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -596,8 +646,8 @@ export default function VentesPage() {
                   <p>Client: <span className="font-medium text-foreground">{clientName(selected.client)}</span></p>
                   <p>Vendeur: <span className="font-medium text-foreground">{selected.vendeur ? `${selected.vendeur.prenom} ${selected.vendeur.nom}` : "—"}</span></p>
                   <p>Date: <span className="font-medium text-foreground">{selected.date}</span></p>
-                  <p>Payé: <span className="font-medium text-foreground">{saleCurrencySymbol(selected)} {fmt(selected.montant_paye ?? 0)}</span></p>
-                  <p>Reste à payer: <span className={`font-medium ${Number(selected.reste_a_payer ?? 0) > 0 ? "text-rose-600" : "text-foreground"}`}>{saleCurrencySymbol(selected)} {fmt(selected.reste_a_payer ?? 0)}</span></p>
+                  <p>Payé: <span className="font-medium text-foreground">{formatMoney(selected.montant_paye ?? 0, saleCurrencySymbol(selected))}</span></p>
+                  <p>Reste à payer: <span className={`font-medium ${Number(selected.reste_a_payer ?? 0) > 0 ? "text-rose-600" : "text-foreground"}`}>{formatMoney(selected.reste_a_payer ?? 0, saleCurrencySymbol(selected))}</span></p>
                 </div>
                 {Number(selected.reste_a_payer ?? 0) > 0 && (
                   <div className="mt-3 flex gap-2">
@@ -629,8 +679,8 @@ export default function VentesPage() {
                       <TableRow key={l.id}>
                         <TableCell>{l.produit?.nom ?? `#${l.id_produit}`}</TableCell>
                         <TableCell>{l.quantite}</TableCell>
-                        <TableCell>{fmt(l.prix_vente)}</TableCell>
-                        <TableCell className="font-semibold text-emerald-600">{(Number(l.quantite) * Number(l.prix_vente)).toFixed(2)}</TableCell>
+                          <TableCell>{formatMoney(l.prix_vente, l.devise?.symbole ?? saleCurrencySymbol(selected))}</TableCell>
+                          <TableCell className="font-semibold text-emerald-600">{formatMoney(Number(l.quantite) * Number(l.prix_vente), l.devise?.symbole ?? saleCurrencySymbol(selected))}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -664,7 +714,7 @@ export default function VentesPage() {
                       <TableRow key={entry.client}>
                         <TableCell>{entry.client}</TableCell>
                         <TableCell><Badge variant="secondary">{entry.count}</Badge></TableCell>
-                        <TableCell className="font-semibold text-rose-600">{entry.amount.toFixed(2)}</TableCell>
+                        <TableCell className="font-semibold text-rose-600">{formatMoney(entry.amount)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -940,6 +990,7 @@ export default function VentesPage() {
                       setShowDetailsDialog(false);
                     }}>Payer dette</Button>
                   )}
+                  <Button variant="outline" onClick={() => { printSelectedSale(selected); }}>Imprimer</Button>
                   <Button variant="outline" onClick={() => { setShowDetailsDialog(false); setSelected(null) }}>Fermer</Button>
                 </div>
               </>
