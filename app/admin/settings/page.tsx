@@ -86,6 +86,7 @@ import {
 import { toast } from "sonner"
 import { backendRequest } from "@/app/services/backend"
 import formatMoney from "@/lib/formatMoney"
+import { postHtmlToPdf } from "@/lib/downloadPdf"
 
 // ==================== TYPES ====================
 
@@ -1552,6 +1553,35 @@ export default function AdminSettingsPage() {
                 <div className="flex gap-2">
                   <Button onClick={handlePrintReport} disabled={!reportData}>
                     Imprimer
+                  </Button>
+                  <Button onClick={async () => {
+                    if (!reportData) return
+                    const title = `${storeInfo.nom || 'Mukingi Accessoir'} - Rapport de ventes`
+                    const html = `
+                      <html>
+                        <head>
+                          <title>${title}</title>
+                          <style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px}</style>
+                        </head>
+                        <body>
+                          <h2>${title}</h2>
+                          <p>Période: ${reportStart || '-'} → ${reportEnd || reportStart || '-'}</p>
+                          ${(() => {
+                            const total = formatMoney(reportData.total_amount || 0, invoiceSettings.symbole_devise)
+                            const profit = formatMoney(reportData.total_profit || 0, invoiceSettings.symbole_devise)
+                            const rows = (reportData.sales || []).map((s: any) => `<tr><td>${s.id}</td><td>${new Date(s.created_at).toLocaleString()}</td><td>${s.client_name || (s.client && s.client.nom) || '-'}</td><td>${formatMoney(s.total || 0, invoiceSettings.symbole_devise)}</td><td>${formatMoney(s.profit || 0, invoiceSettings.symbole_devise)}</td></tr>`).join('')
+                            return `<p>Total ventes: ${total}</p><p>Bénéfice: ${profit}</p><table><thead><tr><th>Id</th><th>Date</th><th>Client</th><th>Total</th><th>Profit</th></tr></thead><tbody>${rows}</tbody></table>`
+                          })()}
+                        </body>
+                      </html>
+                    `
+                    try {
+                      await postHtmlToPdf(html, `rapport_ventes_${reportStart || 'single'}.pdf`)
+                    } catch (e: any) {
+                      toast.error('Erreur génération PDF: ' + (e?.message || String(e)))
+                    }
+                  }} disabled={!reportData}>
+                    Télécharger PDF
                   </Button>
                 </div>
               </div>

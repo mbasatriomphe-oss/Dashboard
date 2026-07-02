@@ -1128,14 +1128,18 @@ export default function ShopReportsPage() {
     }).join('')
 
     const css = `
-      @page { size: A4 landscape; margin: 10mm }
-      body { font-family: Arial, Helvetica, sans-serif; color: #111 }
-      h1,h2,h3 { margin: 0 0 8px 0 }
-      .meta { margin-bottom: 12px }
-      table { width:100%; border-collapse: collapse; margin-bottom: 18px }
+      @page { size: A4 landscape; margin: 15mm }
+      body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size:12px }
+      header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px }
+      header h1 { margin:0 }
+      .meta { font-size:12px; color:#333 }
+      table { width:100%; border-collapse: collapse; margin-bottom: 12px }
       th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px }
-      th { background: #f3f4f6 }
+      th { background: #f6f6f6; text-align:left }
+      thead { display: table-header-group }
+      tfoot { display: table-footer-group }
       tr { page-break-inside: avoid }
+      footer { position: fixed; bottom: 0; left: 0; right: 0; height: 28px; font-size:11px; text-align:center; color:#666 }
     `
 
     const html = `

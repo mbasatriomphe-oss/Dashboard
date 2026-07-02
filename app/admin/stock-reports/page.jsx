@@ -285,6 +285,9 @@ export default function StockReportsPage() {
   const [movementLoadingByProduct, setMovementLoadingByProduct] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [fifoHtml, setFifoHtml] = useState("")
+  const [fifoLoading, setFifoLoading] = useState(true)
+  const [fifoError, setFifoError] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -317,7 +320,7 @@ export default function StockReportsPage() {
           setRestockHistory(buildRestockHistory(lots))
           setCurrencyOptions(devises)
           setSelectedCurrencyId((current) => current ?? devises[0]?.id ?? null)
-          setSelectedProduct(inventory[0]?.id ?? null)
+          setSelectedProduct(null)
         }
       } catch (error) {
         if (!cancelled) {
@@ -336,6 +339,57 @@ export default function StockReportsPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!selectedProduct) {
+      setFifoHtml("")
+      setFifoError("Sélectionnez un produit pour afficher la fiche FIFO.")
+      setFifoLoading(false)
+      return
+    }
+
+    const loadFifoHtml = async () => {
+      setFifoLoading(true)
+      setFifoError(null)
+      const base = getBackendBaseUrl()
+      const params = new URLSearchParams()
+      params.set('produit_id', String(selectedProduct))
+      if (selectedCurrencyId) {
+        params.set('devise_id', String(selectedCurrencyId))
+      }
+      const url = `${base}/rapports/stock-fifo/html?${params.toString()}`
+      const headers = new Headers({ Accept: "text/html" })
+      const token = getStoredToken()
+      let credentials = undefined
+
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`)
+      } else {
+        credentials = "include"
+      }
+
+      try {
+        const res = await fetch(url, {
+          method: "GET",
+          headers,
+          credentials,
+        })
+
+        if (!res.ok) {
+          throw new Error(`Impossible de charger la fiche FIFO (${res.status})`)
+        }
+
+        const html = await res.text()
+        setFifoHtml(html)
+      } catch (err) {
+        setFifoError(err instanceof Error ? err.message : "Impossible de charger la fiche FIFO.")
+      } finally {
+        setFifoLoading(false)
+      }
+    }
+
+    loadFifoHtml()
+  }, [selectedProduct, selectedCurrencyId])
 
   useEffect(() => {
     if (!selectedCurrencyId || stockData.length === 0) {
@@ -522,6 +576,10 @@ export default function StockReportsPage() {
   const filteredData = useMemo(() => {
     let result = [...valuedStockData]
 
+    if (selectedProduct) {
+      result = result.filter((p) => Number(p.id) === Number(selectedProduct))
+    }
+
     if (categoryFilter !== "all") {
       result = result.filter((p) => p.category === categoryFilter)
     }
@@ -548,7 +606,7 @@ export default function StockReportsPage() {
     })
 
     return result
-  }, [valuedStockData, categoryFilter, stockFilter, sortBy, sortOrder])
+  }, [valuedStockData, selectedProduct, categoryFilter, stockFilter, sortBy, sortOrder])
 
   const visibleMovements = useMemo(() => {
     const rangeDays = Math.max(1, Number(dateRange) || 30)
@@ -624,8 +682,15 @@ export default function StockReportsPage() {
           <Button size="sm" onClick={async () => await downloadPdf(`/rapports/ventes/pdf`, "ventes.pdf")}>
             <Download className="w-4 h-4 mr-2" /> Télécharger Ventes (PDF)
           </Button>
-          <Button size="sm" onClick={async () => await downloadPdf(`/rapports/stock/pdf`, "stock.pdf")}>
+          <Button size="sm" onClick={async () => await downloadPdf(`/rapports/stock/pdf`, "stock.pdf")}> 
             <Download className="w-4 h-4 mr-2" /> Télécharger Stock (PDF)
+          </Button>
+          <Button size="sm" disabled={!selectedProduct} onClick={async () => {
+            const query = selectedProduct ? `?produit_id=${selectedProduct}&devise_id=${selectedCurrencyId}` : ''
+            const name = `stock_fifo_produit_${selectedProduct}.pdf`
+            await downloadPdf(`/rapports/stock-fifo/pdf${query}`, name)
+          }}>
+            <Download className="w-4 h-4 mr-2" /> Télécharger fiche FIFO produit (PDF)
           </Button>
         </div>
       </div>
@@ -811,6 +876,23 @@ export default function StockReportsPage() {
                 </SelectContent>
               </Select>
 
+                  <Select
+                value={selectedProduct ? String(selectedProduct) : "all"}
+                onValueChange={(value) => setSelectedProduct(value === "all" ? null : Number(value))}
+              >
+                <SelectTrigger className="w-56">
+                  <SelectValue placeholder="Produit" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Choisir un produit</SelectItem>
+                  {stockData.map((product) => (
+                    <SelectItem key={product.id} value={String(product.id)}>
+                      {product.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Button
                 variant="outline"
                 size="icon"
@@ -826,71 +908,44 @@ export default function StockReportsPage() {
         <TabsContent value="sheet">
           <Card>
             <CardHeader>
-              <CardTitle>Fiche de Stock</CardTitle>
+              <CardTitle>Fiche de Stock FIFO</CardTitle>
               <CardDescription>
-                Liste complète des stocks avec niveaux actuels
+                Vue FIFO des entrées, sorties et stocks par lot
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Produit</TableHead>
-                      <TableHead>Catégorie</TableHead>
-                      <TableHead className="text-center">Stock Actuel</TableHead>
-                      <TableHead className="text-center">Stock Mini</TableHead>
-                      <TableHead className="text-center">Stock Maxi</TableHead>
-                      <TableHead className="text-right">Prix Revient ({selectedCurrencySymbol})</TableHead>
-                      <TableHead className="text-right">Valeur Totale ({selectedCurrencySymbol})</TableHead>
-                      <TableHead>Statut</TableHead>
-                      <TableHead>Dernier Réappro</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredData.map((product) => (
-                      <TableRow key={product.id}>
-                        <TableCell className="font-mono text-sm">{product.sku}</TableCell>
-                        <TableCell className="font-medium text-foreground">{product.name}</TableCell>
-                        <TableCell className="capitalize">{product.category}</TableCell>
-                        <TableCell className="text-center">
-                          <span className={`font-semibold ${
-                            product.currentStock <= product.minStock
-                              ? "text-amber-600"
-                              : "text-foreground"
-                          }`}>
-                            {product.currentStock}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">{product.minStock}</TableCell>
-                        <TableCell className="text-center">{product.maxStock}</TableCell>
-                        <TableCell className="text-right">{selectedCurrencySymbol} {product.displayCostPrice.toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-medium">{selectedCurrencySymbol} {product.displayTotalValue.toFixed(2)}</TableCell>
-                        <TableCell>{getStockBadge(product)}</TableCell>
-                        <TableCell>{product.lastRestock}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Ligne des totaux */}
-              <div className="mt-4 p-4 bg-muted/50 rounded-lg">
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold text-foreground">Totaux :</span>
-                  <div className="flex gap-8">
-                    <div>
-                      <span className="text-muted-foreground">Total Articles : </span>
-                      <span className="font-bold text-foreground">{totals.totalStock}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Valeur Totale ({selectedCurrencySymbol}) : </span>
-                      <span className="font-bold text-foreground">{selectedCurrencySymbol} {totals.totalCostValue.toFixed(2)}</span>
-                    </div>
+              {fifoLoading ? (
+                <div className="p-6 text-sm text-muted-foreground">Chargement de la fiche FIFO...</div>
+              ) : fifoError ? (
+                <Card className="border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 print:hidden">
+                  <CardContent className="p-6 text-sm text-amber-800 dark:text-amber-200">{fifoError}</CardContent>
+                </Card>
+              ) : fifoHtml ? (
+                <>
+                  <div className="overflow-x-auto">
+                    <div dangerouslySetInnerHTML={{ __html: fifoHtml }} />
                   </div>
+                  <div className="flex justify-end mt-4 print:hidden">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={!selectedProduct}
+                      onClick={async () => {
+                        const query = selectedProduct ? `?produit_id=${selectedProduct}&devise_id=${selectedCurrencyId}` : ''
+                        const name = `stock_fifo_produit_${selectedProduct}.pdf`
+                        await downloadPdf(`/rapports/stock-fifo/pdf${query}`, name)
+                      }}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Exporter la fiche FIFO en PDF
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="p-6 text-sm text-muted-foreground">
+                  Sélectionnez un produit pour afficher sa fiche de stock FIFO et pouvoir l'exporter en PDF.
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
