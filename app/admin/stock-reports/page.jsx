@@ -908,7 +908,7 @@ export default function StockReportsPage() {
         <TabsContent value="sheet">
           <Card>
             <CardHeader>
-              <CardTitle>Fiche de Stock FIFO</CardTitle>
+              <CardTitle>Fiche de Stock</CardTitle>
               <CardDescription>
                 Vue FIFO des entrées, sorties et stocks par lot
               </CardDescription>

@@ -95,7 +95,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="flex h-16 items-center justify-between px-6 border-b">
         <div className="flex items-center gap-2">
           <Store className="h-8 w-8 text-primary" />
-          <span className="truncate text-xl font-bold text-foreground">Administration POS</span>
+          <span className="truncate text-xl font-bold text-foreground">Administration C</span>
         </div>
         {mobile && (
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
