@@ -91,6 +91,7 @@ interface ProductSelection {
   prix_unitaire: string
   prix_vente: string
   id_devise: string
+  paye_par_caisse: boolean
 }
 
 // Composant pour modifier la devise d'une ligne individuelle
@@ -375,6 +376,7 @@ function createEmptySelection(): ProductSelection {
     prix_unitaire: "",
     prix_vente: "",
     id_devise: "",
+    paye_par_caisse: false,
   }
 }
 
@@ -601,7 +603,7 @@ export default function ApprovisionnementsPage() {
     })
   }
 
-  const updateProductSelection = <K extends keyof ProductSelection>(productId: number, key: K, value: ProductSelection[K]) => {
+  function updateProductSelection<K extends keyof ProductSelection>(productId: number, key: K, value: ProductSelection[K]) {
     setProductSelections(prev => {
       const current = prev[productId] ?? createEmptySelection()
       return {
@@ -707,9 +709,17 @@ export default function ApprovisionnementsPage() {
               prix_unitaire: Number(selection.prix_unitaire),
               prix_vente: selection.prix_vente === "" ? null : Number(selection.prix_vente),
               id_devise: Number(selection.id_devise),
+              paye_par_caisse: Boolean(selection.paye_par_caisse),
             }
           })
-          .filter((line): line is { id_produit: number; quantite: number; prix_unitaire: number; prix_vente: number | null; id_devise: number } => line !== null)
+          .filter((line): line is {
+            id_produit: number;
+            quantite: number;
+            prix_unitaire: number;
+            prix_vente: number | null;
+            id_devise: number;
+            paye_par_caisse: boolean;
+          } => line !== null)
       }
 
       if (editing) {
@@ -1136,12 +1146,13 @@ export default function ApprovisionnementsPage() {
                 </div>
 
                 <div className="rounded-3xl border bg-background/90 overflow-hidden">
-                  <div className="grid grid-cols-[auto_1.4fr_.8fr_.9fr_.9fr_.9fr] gap-3 border-b px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  <div className="grid grid-cols-[auto_1.4fr_.7fr_.8fr_.8fr_.8fr_.9fr] gap-3 border-b px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                     <span></span>
                     <span>Produit</span>
                     <span>Qté</span>
                     <span>Achat</span>
                     <span>Vente</span>
+                    <span>En caisse</span>
                     <span>Devise</span>
                   </div>
 
@@ -1158,7 +1169,7 @@ export default function ApprovisionnementsPage() {
                         return (
                           <div
                             key={product.id}
-                            className={`grid grid-cols-[auto_1.4fr_.8fr_.9fr_.9fr_.9fr] items-center gap-3 border-b px-4 py-4 transition-colors last:border-b-0 ${selection.selected ? "bg-amber-50/70" : "hover:bg-muted/40"}`}
+                            className={`grid grid-cols-[auto_1.4fr_.7fr_.8fr_.8fr_.8fr_.9fr] items-center gap-3 border-b px-4 py-4 transition-colors last:border-b-0 ${selection.selected ? "bg-amber-50/70" : "hover:bg-muted/40"}`}
                           >
                             <Checkbox
                               checked={selection.selected}
@@ -1206,6 +1217,15 @@ export default function ApprovisionnementsPage() {
                               className="h-10 rounded-xl"
                             />
 
+                            <div className="flex items-center justify-center">
+                              <Checkbox
+                                checked={selection.paye_par_caisse}
+                                onCheckedChange={(value) => updateProductSelection(product.id, "paye_par_caisse", Boolean(value))}
+                                disabled={!selection.selected}
+                                aria-label="Prendre dans la caisse"
+                              />
+                            </div>
+
                             <Select
                               value={selection.id_devise || defaultDeviseId}
                               onValueChange={(value) => updateProductSelection(product.id, "id_devise", value)}
@@ -1229,7 +1249,7 @@ export default function ApprovisionnementsPage() {
 
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white/70 px-4 py-3">
                   <p className="text-xs text-muted-foreground">
-                    La quantité, le prix d'achat, le prix de vente et la devise sont saisis directement sur les produits cochés.
+                    La quantité, le prix d'achat, le prix de vente et la devise sont saisis directement sur les produits cochés. Coche « En caisse » pour débiter la caisse; sinon, le stock est approvisionné sans mouvement de caisse.
                   </p>
                   <Badge variant="outline" className="rounded-full px-3 py-1">Prix en décimal</Badge>
                 </div>

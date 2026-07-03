@@ -243,16 +243,26 @@ export default function CheckoutPage() {
         }
 
         const nextRates: Record<string, number> = {}
+        let anyRateLoaded = false
+        let loadError: string | null = null
 
         await Promise.all(
           sourceCurrencyIds.map(async (sourceCurrencyId) => {
-            const rate = await resolveRate(sourceCurrencyId, selectedCurrencyId)
-            nextRates[makeRateKey(sourceCurrencyId, selectedCurrencyId)] = rate
+            try {
+              const rate = await resolveRate(sourceCurrencyId, selectedCurrencyId)
+              nextRates[makeRateKey(sourceCurrencyId, selectedCurrencyId)] = rate
+              anyRateLoaded = true
+            } catch (error) {
+              loadError = error instanceof Error ? error.message : String(error)
+            }
           }),
         )
 
         if (!cancelled) {
           setRateByPair(nextRates)
+          if (!anyRateLoaded && loadError) {
+            setCatalogError(loadError)
+          }
         }
       } catch (error) {
         if (!cancelled) {

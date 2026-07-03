@@ -100,11 +100,11 @@ export default function VentesPage() {
     const dateParam = date ? `&date=${encodeURIComponent(date)}` : ''
 
     try {
-      const response = await backendRequest(`/taux/actif?devise_source=${sourceCurrencyId}&devise_but=${targetCurrencyId}${dateParam}`)
-      const direct = Number(response.data?.valeur)
+      const directResponse = await backendRequest(`/taux/actif?devise_source=${sourceCurrencyId}&devise_but=${targetCurrencyId}${dateParam}`)
+      const direct = Number(directResponse.data?.valeur)
       if (Number.isFinite(direct) && direct > 0) return direct
       throw new Error('Taux invalide')
-    } catch (e) {
+    } catch {
       const reverseResponse = await backendRequest(`/taux/actif?devise_source=${targetCurrencyId}&devise_but=${sourceCurrencyId}${dateParam}`)
       const reverse = Number(reverseResponse.data?.valeur)
       if (!Number.isFinite(reverse) || reverse <= 0) throw new Error('Taux introuvable')
