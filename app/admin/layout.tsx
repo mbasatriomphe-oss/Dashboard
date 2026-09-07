@@ -50,7 +50,7 @@ const adminNavigation = [
   { name: "Fournisseurs", href: "/admin/fournisseurs", icon: Truck },
   { name: "Approvisionnements", href: "/admin/approvisionnements", icon: PackagePlus },
   { name: "Rapport Stock", href: "/admin/stock-reports", icon: FileSpreadsheet },
-  { name: "Tous les Rapports", href: "/admin/reports", icon: FileSpreadsheet },
+  { name: "Tous les RapportsSSS", href: "/admin/reports", icon: FileSpreadsheet },
   { name: "Organisations", href: "/admin/organizations", icon: Building2 },
   { name: "Analyses", href: "/admin/analytics", icon: BarChart3 },
   { name: "Paramètres", href: "/admin/settings", icon: Settings },
