@@ -1,0 +1,43 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class mouvements_stock_fifos extends Model
+{
+    use HasFactory;
+
+    protected $table = 'mouvements_stock_fifos';
+
+    protected $fillable = [
+        'id_lot',
+        'id_ligne_vente',
+        'id_ligne_retour',
+        'type_mouvement',
+        'quantite',
+        'quantite_restante_avant',
+        'quantite_restante_apres',
+        'date_mouvement',
+    ];
+
+    protected $casts = [
+        'date_mouvement' => 'date',
+    ];
+
+    public function lot()
+    {
+        return $this->belongsTo(lots::class, 'id_lot');
+    }
+
+    public function ligneVente()
+    {
+        return $this->belongsTo(ligne_ventes::class, 'id_ligne_vente');
+    }
+
+    public function ligneRetour()
+    {
+        return $this->belongsTo(ligne_retours::class, 'id_ligne_retour');
+    }
+}

@@ -1,0 +1,9 @@
+HTTP/1.1 500 Internal Server Error
+Host: 127.0.0.1:8000
+Connection: close
+X-Powered-By: PHP/8.2.12
+Cache-Control: no-cache, private
+date: Wed, 17 Jun 2026 09:39:15 GMT
+Content-Type: text/html; charset=utf-8
+Vary: Origin
+

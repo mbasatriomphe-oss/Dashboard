@@ -1,0 +1,204 @@
+PHASE 1: Configuration et Authentification
+1.1 Installer Laravel et configurer l'environnement (.env) ✅
+
+1.2 Configurer la connexion à la base de données ✅
+
+1.3 Exécuter les migrations corrigées ✅
+
+1.4 Installer Laravel Breeze/Jetstream pour l'authentification ✅
+
+1.5 Créer les seeders pour les données initiales (devises, unités, admin) ✅
+
+1.6 Mettre en place le middleware d'authentification et les rôles (user/admin) ✅
+
+🎯 PHASE 2: Modules de Base (CRUD)
+2.1 Gestion des Unités (CRUD + validation) ✅
+
+2.2 Gestion des Devises (CRUD + validation)✅
+
+2.3 Gestion des Taux de change✅
+
+CRUD des taux✅
+
+Validation croisée devise_source ≠ devise_but✅
+
+Gestion du statut (actif/inactif)✅
+
+Méthode pour obtenir le taux actif par date✅
+
+2.4 Gestion des Catégories (CRUD + upload photo)✅
+
+2.5 Gestion des Produits✅
+
+CRUD avec génération auto du code✅
+
+Upload de photo✅
+
+Validation des clés étrangères✅
+
+🎯 PHASE 3: Fournisseurs et Approvisionnements
+3.1 Gestion des Fournisseurs (CRUD)
+
+3.2 Gestion des Approvisionnements
+
+Création avec génération de code
+
+Lignes d'approvisionnement
+
+Validation des prix et quantités
+
+3.3 Gestion des Lots
+
+Création automatique après approvisionnement
+
+Numéro de lot unique
+
+Suivi des quantités
+
+3.4 Mouvements de caisse (Sortie pour approvisionnement)
+
+Vérifier solde disponible par devise
+ 
+Débiter la caisse
+
+Historiser la transaction
+
+🎯 PHASE 4: Ventes et Clients
+4.1 Gestion des Clients (CRUD)
+
+4.2 Gestion des Vendeurs (CRUD)
+
+4.3 Gestion des Ventes
+
+Création avec génération de code
+
+Sélection des produits avec stock disponible
+
+Application FIFO pour sortie de stock
+
+Calcul automatique des prix
+
+Lignes de vente
+
+4.4 Mouvements de caisse (Entrée pour vente)
+
+Créditer la caisse
+
+Gestion des devises
+
+4.5 Management du stock
+
+Vérification stock avant vente
+
+Mise à jour FIFO
+
+🎯 PHASE 5: Gestion des Retours
+5.1 Création de retour
+
+Génération code retour
+
+Sélection vente existante
+
+Calcul des montants (remboursement, pénalités)
+
+5.2 Lignes de retour
+
+État du produit (bon, utilisé, endommagé...)
+
+Raison de différence de prix
+
+Calcul automatique du prix de remboursement
+
+5.3 Réintégration au stock
+
+Remettre en lot si état "bon"
+
+Créer mouvement FIFO inversé
+
+Mise à jour stock
+
+5.4 Gestion caisse pour remboursement
+
+Décréditer la caisse (sortie)
+
+Justification documentée
+
+🎯 PHASE 6: Caisse et Finance
+6.1 Création initiale des caisses par devise
+
+6.2 Service de gestion de caisse
+
+Vérifier solde par devise
+
+Créditer/débiter avec validation
+
+Historique des transactions
+
+6.3 Table transactions_caisses
+ PHASE 7: Stock et FIFO Avancé
+7.1 Service FIFO complet
+
+consommerStockFIFO($produitId, $quantite$) - pour les ventes
+
+reintegrerStockFIFO($lotId, $quantite$) - pour les retours
+
+Obtenir le stock disponible par produit
+
+Obtenir le stock disponible par lot
+
+7.2 Mouvements de stock
+
+Logger tous les mouvements
+
+Table inventaires_periodiques
+
+7.3 Alertes stock bas
+
+Seuil minimum par produit
+
+Notifications
+
+🎯 PHASE 8: Dashboard et Rapports
+8.1 Dashboard Admin
+
+Vue générale (ventes jour, stocks bas, bénéfices)
+
+Graphiques (Chart.js/Laravel Charts)
+
+8.2 Rapports
+
+Rapport des ventes par période
+
+Rapport des retours
+
+État de stock (par produit, par lot)
+
+Rapport de caisse
+
+Rapport des bénéfices (COGS FIFO)
+
+8.3 Exportations
+
+Export PDF et Excel
+
+Impression des factures
+
+🎯 PHASE 9: API et Fonctionnalités Avancées
+9.1 API REST
+
+Endpoints pour mobile
+
+Authentification API (Sanctum)
+
+9.2 Notifications
+
+Stock bas
+
+Alertes expiration lots
+
+9.3 Backup et maintenance
+
+Backup DB automatique
+
+Logs d'activité
+
