@@ -238,6 +238,50 @@ export default function ProductsPage() {
     void loadCategoryAttributes(formData.categorie_id)
   }, [formData.categorie_id, formData.has_variantes, loadCategoryAttributes])
 
+  const getVariantGroups = () => {
+    if (categoryAttributes.length > 0) {
+      return categoryAttributes
+        .map(attr => ({
+          name: attr.nom.trim(),
+          values: attr.valuesText.split(",").map(v => v.trim()).filter(Boolean),
+        }))
+        .filter(group => group.name && group.values.length > 0)
+    }
+
+    const grouped = new Map<string, Set<string>>()
+
+    variantRows
+      .filter(row => row.attribut.trim() && row.valeur.trim())
+      .forEach(row => {
+        const key = row.attribut.trim()
+        if (!grouped.has(key)) grouped.set(key, new Set())
+        grouped.get(key)!.add(row.valeur.trim())
+      })
+
+    return Array.from(grouped.entries()).map(([name, valuesSet]) => ({
+      name,
+      values: Array.from(valuesSet),
+    }))
+  }
+
+  const generateAllVariantCombinations = (groups: Array<{ name: string; values: string[] }>) => {
+    if (groups.length === 0) return []
+
+    let combinations: Array<Record<string, string>> = [{}]
+
+    groups.forEach(group => {
+      const next: Array<Record<string, string>> = []
+      combinations.forEach(current => {
+        group.values.forEach(value => {
+          next.push({ ...current, [group.name]: value })
+        })
+      })
+      combinations = next
+    })
+
+    return combinations
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -252,16 +296,9 @@ export default function ProductsPage() {
     }
 
     if (formData.has_variantes) {
-      const attributeGroups = categoryAttributes.length > 0
-        ? categoryAttributes
-        : variantRows.filter(row => row.attribut.trim() && row.valeur.trim())
-
-      const hasValues = categoryAttributes.length > 0
-        ? categoryAttributes.some(group => group.valuesText.split(",").map(v => v.trim()).filter(Boolean).length > 0)
-        : attributeGroups.length > 0
-
-      if (!hasValues) {
-        setFormError("Complétez au moins une valeur pour chaque attribut de variante.")
+      const groups = getVariantGroups()
+      if (groups.length === 0) {
+        setFormError("Complétez au moins un attribut et ses valeurs pour générer les variantes.")
         return
       }
     }
@@ -310,44 +347,19 @@ export default function ProductsPage() {
       }
 
       if (formData.has_variantes && createdProduct?.id) {
-        const groups = categoryAttributes.length > 0
-          ? categoryAttributes.map(attr => ({
-              name: attr.nom,
-              values: attr.valuesText.split(",").map(v => v.trim()).filter(Boolean),
-            }))
-          : variantRows
-              .filter(row => row.attribut.trim() && row.valeur.trim())
-              .map(row => ({
-                name: row.attribut.trim(),
-                values: [row.valeur.trim()],
-              }))
+        const groups = getVariantGroups()
+        const combinations = generateAllVariantCombinations(groups)
 
-        const validGroups = groups.filter(group => group.values.length > 0)
-        if (validGroups.length > 0) {
-          const combinations: Array<Record<string, string>> = [{}]
-
-          for (const group of validGroups) {
-            const nextCombinations: Array<Record<string, string>> = []
-            for (const current of combinations) {
-              for (const value of group.values) {
-                nextCombinations.push({ ...current, [group.name]: value })
-              }
-            }
-            combinations.length = 0
-            combinations.push(...nextCombinations)
-          }
-
-          for (const combination of combinations) {
-            await backendRequest("/variantes-produits", {
-              method: "POST",
-              body: JSON.stringify({
-                produit_id: createdProduct.id,
-                combinaison: combination,
-                stock: 0,
-                stock_alerte: 0,
-              }),
-            })
-          }
+        for (const combination of combinations) {
+          await backendRequest("/variantes-produits", {
+            method: "POST",
+            body: JSON.stringify({
+              produit_id: createdProduct.id,
+              combinaison: combination,
+              stock: 0,
+              stock_alerte: 0,
+            }),
+          })
         }
       }
 
@@ -539,8 +551,8 @@ export default function ProductsPage() {
       </Card>
 
       <Dialog open={showDialog} onOpenChange={(open) => !open && closeDialog()}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="border-b pb-4">
             <DialogTitle>{editing ? "Modifier le produit" : "Nouveau produit"}</DialogTitle>
           </DialogHeader>
 

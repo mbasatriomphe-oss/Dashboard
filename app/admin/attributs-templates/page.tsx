@@ -275,12 +275,12 @@ export default function AttributTemplatesPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={open => !open && setDialogOpen(false)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="border-b pb-4">
             <DialogTitle>Nouveau mapping</DialogTitle>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto pr-1 flex-1">
             {formError && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -302,9 +302,12 @@ export default function AttributTemplatesPage() {
               </Select>
             </div>
 
-            <div className="space-y-3 rounded-md border border-dashed bg-slate-50 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <Label className="text-sm font-medium">Attributs à associer</Label>
+            <div className="space-y-3 rounded-2xl border border-dashed bg-gradient-to-br from-slate-50 to-cyan-50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <Label className="text-sm font-semibold">Attributs à associer</Label>
+                  <p className="text-xs text-muted-foreground">Reliez les attributs à la catégorie sélectionnée.</p>
+                </div>
                 <Button type="button" variant="outline" size="sm" onClick={addAttributeRow}>
                   <Plus className="mr-2 h-4 w-4" />
                   Ajouter
