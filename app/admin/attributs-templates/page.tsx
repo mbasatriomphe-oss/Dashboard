@@ -18,13 +18,27 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 interface Category { id: number; nom: string }
 interface Attribut { id: number; nom: string }
 interface AttributTemplate { id: number; categorie_id: number; attribut_id: number; obligatoire: boolean; est_visuel: boolean; attribut?: Attribut; categorie?: Category }
+interface AttributeRow {
+  id: string
+  nom: string
+  type_affichage: string
+  obligatoire: boolean
+  est_visuel: boolean
+}
 
 const EMPTY_FORM = {
   categorie_id: "",
-  attribut_id: "",
   obligatoire: false,
   est_visuel: false,
 }
+
+const EMPTY_ATTRIBUTE_ROW = (): AttributeRow => ({
+  id: "",
+  nom: "",
+  type_affichage: "text",
+  obligatoire: false,
+  est_visuel: false,
+})
 
 export default function AttributTemplatesPage() {
   const [items, setItems] = useState<AttributTemplate[]>([])
@@ -37,8 +51,24 @@ export default function AttributTemplatesPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [formData, setFormData] = useState(EMPTY_FORM)
   const [formError, setFormError] = useState("")
-  const [newAttributeName, setNewAttributeName] = useState("")
-  const [newAttributeType, setNewAttributeType] = useState("text")
+  const [attributeRows, setAttributeRows] = useState<AttributeRow[]>([EMPTY_ATTRIBUTE_ROW()])
+
+  const addAttributeRow = () => {
+    setAttributeRows(prev => [...prev, EMPTY_ATTRIBUTE_ROW()])
+  }
+
+  const removeAttributeRow = (rowIndex: number) => {
+    setAttributeRows(prev => {
+      if (prev.length === 1) {
+        return [EMPTY_ATTRIBUTE_ROW()]
+      }
+      return prev.filter((_, index) => index !== rowIndex)
+    })
+  }
+
+  const updateAttributeRow = (rowIndex: number, field: keyof AttributeRow, value: string | boolean) => {
+    setAttributeRows(prev => prev.map((row, index) => index === rowIndex ? { ...row, [field]: value } : row))
+  }
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -81,65 +111,68 @@ export default function AttributTemplatesPage() {
       return
     }
 
+    const validRows = attributeRows.filter(row => row.nom.trim() || row.id)
+    if (validRows.length === 0) {
+      setFormError("Ajoutez au moins un attribut à associer à cette catégorie.")
+      return
+    }
+
     setSaving(true)
     setFormError("")
 
     try {
-      let chosenAttributId = formData.attribut_id ? Number(formData.attribut_id) : 0
+      const categoryId = Number(formData.categorie_id)
+      const payloads: Array<{ categorie_id: number; attribut_id: number; obligatoire: boolean; est_visuel: boolean }> = []
 
-      if (!chosenAttributId) {
-        const trimmedName = newAttributeName.trim()
+      for (const row of validRows) {
+        const trimmedName = row.nom.trim()
+        let chosenAttributId = row.id ? Number(row.id) : 0
 
-        if (!trimmedName) {
-          setFormError("Sélectionnez un attribut existant ou créez-en un nouveau.")
-          return
-        }
+        if (!chosenAttributId && trimmedName) {
+          const existingMatch = attributs.find(item => item.nom.toLowerCase() === trimmedName.toLowerCase())
+          if (existingMatch) {
+            chosenAttributId = existingMatch.id
+          } else {
+            const createdRes = await backendRequest<{ data: Attribut }>('/attributs', {
+              method: 'POST',
+              body: JSON.stringify({
+                nom: trimmedName,
+                type_affichage: row.type_affichage || 'text',
+              }),
+            })
 
-        const existingMatch = attributs.find(item => item.nom.toLowerCase() === trimmedName.toLowerCase())
-        if (existingMatch) {
-          chosenAttributId = existingMatch.id
-          setFormData(prev => ({ ...prev, attribut_id: String(existingMatch.id) }))
-        } else {
-          const createdRes = await backendRequest<{ data: Attribut }>('/attributs', {
-            method: 'POST',
-            body: JSON.stringify({
-              nom: trimmedName,
-              type_affichage: newAttributeType,
-            }),
-          })
+            const createdAttribut = createdRes.data ?? createdRes
+            if (!createdAttribut || !('id' in createdAttribut)) {
+              throw new Error('Impossible de créer l\'attribut.')
+            }
 
-          const createdAttribut = createdRes.data
-          if (!createdAttribut) {
-            throw new Error('Impossible de créer l\'attribut.')
+            chosenAttributId = createdAttribut.id
+            setAttributs(prev => [createdAttribut, ...prev.filter(item => item.id !== createdAttribut.id)])
           }
-
-          chosenAttributId = createdAttribut.id
-          setFormData(prev => ({ ...prev, attribut_id: String(createdAttribut.id) }))
-          setAttributs(prev => [createdAttribut, ...prev.filter(item => item.id !== createdAttribut.id)])
         }
+
+        if (!chosenAttributId) {
+          throw new Error(`L'attribut "${trimmedName || 'inconnu'}" est invalide.`)
+        }
+
+        payloads.push({
+          categorie_id: categoryId,
+          attribut_id: chosenAttributId,
+          obligatoire: row.obligatoire ?? formData.obligatoire,
+          est_visuel: row.est_visuel ?? formData.est_visuel,
+        })
       }
 
-      if (!chosenAttributId) {
-        setFormError("L'attribut est requis.")
-        return
+      for (const payload of payloads) {
+        await backendRequest('/attributs-templates', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        })
       }
-
-      const payload = {
-        categorie_id: Number(formData.categorie_id),
-        attribut_id: chosenAttributId,
-        obligatoire: formData.obligatoire,
-        est_visuel: formData.est_visuel,
-      }
-
-      await backendRequest("/attributs-templates", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      })
 
       setDialogOpen(false)
       setFormData(EMPTY_FORM)
-      setNewAttributeName("")
-      setNewAttributeType("text")
+      setAttributeRows([EMPTY_ATTRIBUTE_ROW()])
       await fetchData()
     } catch (e: unknown) {
       setFormError(e instanceof Error ? e.message : "Erreur lors de l'enregistrement")
@@ -269,85 +302,94 @@ export default function AttributTemplatesPage() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label>Attribut</Label>
-              <Select value={formData.attribut_id} onValueChange={value => setFormData(prev => ({ ...prev, attribut_id: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choisir un attribut" />
-                </SelectTrigger>
-                <SelectContent>
-                  {attributs.map(attribut => (
-                    <SelectItem key={attribut.id} value={String(attribut.id)}>{attribut.nom}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="space-y-3 rounded-md border border-dashed bg-slate-50 p-3">
               <div className="flex items-center justify-between gap-2">
-                <Label className="text-sm font-medium">Créer un attribut maintenant</Label>
-                {newAttributeName.trim() && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2"
-                    onClick={() => setNewAttributeName("")}
-                  >
-                    Effacer
-                  </Button>
-                )}
+                <Label className="text-sm font-medium">Attributs à associer</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addAttributeRow}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Ajouter
+                </Button>
               </div>
 
-              <Input
-                value={newAttributeName}
-                onChange={e => setNewAttributeName(e.target.value)}
-                placeholder="Ex: Taille, Matière, Couleur..."
-              />
+              {attributeRows.map((row, index) => (
+                <div key={index} className="space-y-3 rounded-md border bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Attribut {index + 1}</span>
+                    {attributeRows.length > 1 && (
+                      <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-destructive" onClick={() => removeAttributeRow(index)}>
+                        Retirer
+                      </Button>
+                    )}
+                  </div>
 
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Type d’affichage</Label>
-                <Select value={newAttributeType} onValueChange={setNewAttributeType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choisir un type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="text">Texte</SelectItem>
-                    <SelectItem value="color">Couleur</SelectItem>
-                    <SelectItem value="select">Liste</SelectItem>
-                    <SelectItem value="number">Nombre</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                  <div className="space-y-2">
+                    <Label>Choisir un attribut existant</Label>
+                    <Select value={row.id} onValueChange={value => updateAttributeRow(index, 'id', value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner un attribut existant" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {attributs.map(attribut => (
+                          <SelectItem key={attribut.id} value={String(attribut.id)}>{attribut.nom}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Ou créer un nouvel attribut</Label>
+                    <Input
+                      value={row.nom}
+                      onChange={e => updateAttributeRow(index, 'nom', e.target.value)}
+                      placeholder="Ex: Taille, Matière, Couleur..."
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Type d’affichage</Label>
+                    <Select value={row.type_affichage} onValueChange={value => updateAttributeRow(index, 'type_affichage', value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choisir un type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="text">Texte</SelectItem>
+                        <SelectItem value="color">Couleur</SelectItem>
+                        <SelectItem value="select">Liste</SelectItem>
+                        <SelectItem value="number">Nombre</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="flex items-center justify-between rounded-md border p-3">
+                      <div>
+                        <div className="font-medium">Obligatoire</div>
+                        <div className="text-sm text-muted-foreground">Requis</div>
+                      </div>
+                      <Switch checked={row.obligatoire} onCheckedChange={value => updateAttributeRow(index, 'obligatoire', value)} />
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border p-3">
+                      <div>
+                        <div className="font-medium">Visuel</div>
+                        <div className="text-sm text-muted-foreground">Image</div>
+                      </div>
+                      <Switch checked={row.est_visuel} onCheckedChange={value => updateAttributeRow(index, 'est_visuel', value)} />
+                    </div>
+                  </div>
+                </div>
+              ))}
 
               <p className="text-xs text-muted-foreground">
-                Si l’attribut n’existe pas encore, il sera créé puis associé à la catégorie dans le même enregistrement.
+                Si un attribut n’existe pas, il sera créé puis associé directement à cette catégorie dans le même formulaire.
               </p>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="flex items-center justify-between rounded-md border p-3">
-                <div>
-                  <div className="font-medium">Obligatoire</div>
-                  <div className="text-sm text-muted-foreground">Attribut requis pour le produit</div>
-                </div>
-                <Switch checked={formData.obligatoire} onCheckedChange={value => setFormData(prev => ({ ...prev, obligatoire: value }))} />
-              </div>
-
-              <div className="flex items-center justify-between rounded-md border p-3">
-                <div>
-                  <div className="font-medium">Visuel</div>
-                  <div className="text-sm text-muted-foreground">Image / affichage visuel</div>
-                </div>
-                <Switch checked={formData.est_visuel} onCheckedChange={value => setFormData(prev => ({ ...prev, est_visuel: value }))} />
-              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Annuler</Button>
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Enregistrer
+                Enregistrer les attributs
               </Button>
             </div>
           </form>
