@@ -1209,18 +1209,19 @@ export default function ApprovisionnementsPage() {
                   />
                 </div>
 
-                <div className="rounded-3xl border bg-background/90 overflow-hidden">
-                  <div className="grid grid-cols-[auto_1.4fr_.7fr_.8fr_.8fr_.8fr_.9fr] gap-3 border-b px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    <span></span>
-                    <span>Produit</span>
-                    <span>Qté</span>
-                    <span>Achat</span>
-                    <span>Vente</span>
-                    <span>En caisse</span>
-                    <span>Devise</span>
-                  </div>
+                <div className="overflow-hidden rounded-3xl border bg-background/90">
+                  <div className="max-h-[52vh] overflow-auto">
+                    <div className="min-w-[920px]">
+                      <div className="grid grid-cols-[auto_1.4fr_.7fr_.8fr_.8fr_.8fr_.9fr] gap-3 border-b bg-muted/25 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        <span></span>
+                        <span>Produit</span>
+                        <span>Quantité</span>
+                        <span>Prix d'achat</span>
+                        <span>Prix de vente</span>
+                        <span>Caisse</span>
+                        <span>Devise</span>
+                      </div>
 
-                  <div className="max-h-[46vh] overflow-y-auto">
                     {filteredProducts.length === 0 ? (
                       <div className="py-10 text-center text-muted-foreground">
                         Aucun produit trouvé.
@@ -1250,10 +1251,13 @@ export default function ApprovisionnementsPage() {
                               const variants = productVariants[product.id] ?? []
                               if (variants.length > 0) {
                                 return (
-                                  <div className="col-span-full mt-3 rounded-2xl border bg-white/80 p-3">
+                                  <div className="col-span-full mt-3 rounded-2xl border border-orange-200 bg-white/80 p-3 shadow-sm">
                                     <div className="mb-2 flex items-center justify-between gap-2">
-                                      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Variantes</span>
-                                      <Badge variant="outline">Prix commun: {selection.prix_unitaire || "0.00"}</Badge>
+                                      <div>
+                                        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Variantes à réceptionner</span>
+                                        <p className="mt-1 text-xs text-muted-foreground">Définis la quantité pour chaque combinaison.</p>
+                                      </div>
+                                      <Badge variant="outline" className="border-orange-200 bg-orange-50">Prix commun : {selection.prix_unitaire || "0.00"}</Badge>
                                     </div>
                                     <div className="space-y-2">
                                       {variants.map(variant => {
@@ -1308,7 +1312,7 @@ export default function ApprovisionnementsPage() {
                               value={selection.prix_unitaire}
                               onChange={(e) => updateProductSelection(product.id, "prix_unitaire", e.target.value)}
                               placeholder="0.00"
-                              className="h-10 rounded-xl"
+                              className="h-10 rounded-xl border-blue-200 bg-blue-50/40 font-medium"
                             />
 
                             <Input
@@ -1320,7 +1324,7 @@ export default function ApprovisionnementsPage() {
                               value={selection.prix_vente}
                               onChange={(e) => updateProductSelection(product.id, "prix_vente", e.target.value)}
                               placeholder="0.00"
-                              className="h-10 rounded-xl"
+                              className="h-10 rounded-xl border-emerald-200 bg-emerald-50/40 font-medium"
                             />
 
                             <div className="flex items-center justify-center">
@@ -1350,6 +1354,7 @@ export default function ApprovisionnementsPage() {
                         )
                       })
                     )}
+                    </div>
                   </div>
                 </div>
 

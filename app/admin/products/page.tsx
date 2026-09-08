@@ -290,8 +290,8 @@ export default function ProductsPage() {
       return
     }
 
-    if (!formData.has_variantes && !formData.unite_id) {
-      setFormError("L'unité est obligatoire pour les produits simples.")
+    if (!formData.unite_id) {
+      setFormError("L'unité est obligatoire pour tous les produits, avec ou sans variantes.")
       return
     }
 
@@ -312,10 +312,7 @@ export default function ProductsPage() {
       body.append("description", formData.description.trim())
       body.append("categorie_id", formData.categorie_id)
       body.append("has_variantes", formData.has_variantes ? "1" : "0")
-
-      if (!formData.has_variantes && formData.unite_id) {
-        body.append("unite_id", formData.unite_id)
-      }
+      body.append("unite_id", formData.unite_id)
 
       if (!formData.has_variantes) {
         if (formData.prix_achat !== "") body.append("prix_achat", formData.prix_achat)
@@ -514,14 +511,10 @@ export default function ProductsPage() {
                       <Badge variant="secondary">{product.categorie?.nom ?? `#${product.categorie_id}`}</Badge>
                     </TableCell>
                     <TableCell>
-                      {product.has_variantes ? (
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">Variantes</Badge>
-                          <span className="text-xs text-muted-foreground">{product.quantite_stock ?? 0} / stock</span>
-                        </div>
-                      ) : (
-                        <Badge variant="outline">{product.unite ? `${product.unite.nom} (${product.unite.symbole})` : `#${product.unite_id}`}</Badge>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">{product.unite ? `${product.unite.nom} (${product.unite.symbole})` : `#${product.unite_id ?? "—"}`}</Badge>
+                        {product.has_variantes && <Badge variant="secondary">Variantes</Badge>}
+                      </div>
                     </TableCell>
                     <TableCell className="max-w-[320px] truncate text-muted-foreground">
                       {product.description ?? "—"}
@@ -593,7 +586,7 @@ export default function ProductsPage() {
                       id="has_variantes"
                       type="checkbox"
                       checked={Boolean(formData.has_variantes)}
-                      onChange={(e) => setFormData(prev => ({ ...prev, has_variantes: e.target.checked, unite_id: e.target.checked ? "" : prev.unite_id }))}
+                      onChange={(e) => setFormData(prev => ({ ...prev, has_variantes: e.target.checked }))}
                     />
                     <span className="text-sm">Oui, ce produit a des variantes</span>
                   </div>
@@ -618,23 +611,25 @@ export default function ProductsPage() {
                   </div>
                 )}
 
-                {!formData.has_variantes && (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label htmlFor="unite_id">Unité *</Label>
-                      <Select value={formData.unite_id} onValueChange={(value) => setFormData(prev => ({ ...prev, unite_id: value }))}>
-                        <SelectTrigger id="unite_id">
-                          <SelectValue placeholder="Choisir une unité" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-60 overflow-y-auto">
-                          {unites.map(unite => (
-                            <SelectItem key={unite.id} value={String(unite.id)}>{unite.nom} ({unite.symbole})</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div>
+                      <Label htmlFor="unite_id">Unité de gestion *</Label>
+                      <p className="text-xs text-muted-foreground">Utilisée pour ce produit et ses variantes.</p>
                     </div>
+                    <Badge variant="outline">Obligatoire</Badge>
                   </div>
-                )}
+                  <Select value={formData.unite_id} onValueChange={(value) => setFormData(prev => ({ ...prev, unite_id: value }))}>
+                    <SelectTrigger id="unite_id" className="h-11 bg-background">
+                      <SelectValue placeholder="Choisir une unité" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60 overflow-y-auto">
+                      {unites.map(unite => (
+                        <SelectItem key={unite.id} value={String(unite.id)}>{unite.nom} ({unite.symbole})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {!formData.has_variantes && (
                   <div className="grid gap-4 sm:grid-cols-3">
