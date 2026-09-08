@@ -49,7 +49,7 @@ async function downloadPdf(path, filename) {
     let credentials = undefined
 
     if (token) {
-      headers.set("Authorization", `Bearer ${tokenToUse}`)
+      headers.set("Authorization", `Bearer ${token}`)
   } else {
       // fallback to cookie-based auth (Sanctum)
       credentials = "include"
@@ -72,7 +72,7 @@ async function downloadPdf(path, filename) {
         if (signedResp.ok) {
           const j = await signedResp.json()
           if (j.url) {
-            window.open(j.url, '_blank')
+            window.open(j.url, '_blank', 'noopener,noreferrer')
             return
           }
         }
@@ -110,11 +110,69 @@ async function downloadPdf(path, filename) {
   }
 }
 
+async function exportSectionPdf(sectionId, filename, title) {
+  const section = document.getElementById(sectionId)
+  if (!section) {
+    alert("Le rapport n'est pas encore disponible.")
+    return
+  }
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    @page { size: A4 landscape; margin: 14mm; }
+    body { font-family: Arial, sans-serif; color: #17211b; font-size: 11px; }
+    h1,h2,h3 { color: #315b45; margin: 0 0 10px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    th,td { border: 1px solid #d8ded8; padding: 6px 8px; text-align: left; }
+    th { background: #edf4ed; color: #315b45; }
+    .report-export-button, button { display: none !important; }
+    img { max-width: 52px; max-height: 52px; object-fit: cover; }
+  </style></head><body><h1>${title}</h1>${section.innerHTML}</body></html>`
+
+  try {
+    const token = getStoredToken() || ""
+    const response = await fetch(`${getBackendBaseUrl()}/rapports/html-to-pdf`, {
+      method: "POST",
+      headers: {
+        Accept: "application/pdf",
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: "include",
+      body: JSON.stringify({ html, filename }),
+    })
+
+    if (!response.ok) throw new Error(`Erreur PDF (${response.status})`)
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    alert(error instanceof Error ? error.message : "Impossible d'exporter le rapport")
+  }
+}
+
 const DEFAULT_PRODUCT_IMAGE =
   "data:image/svg+xml;charset=UTF-8," +
   encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120"><rect width="160" height="120" rx="18" fill="#f3f4f6"/><path d="M30 84h100l-12-28H42L30 84Z" fill="#cbd5e1"/><circle cx="58" cy="52" r="8" fill="#94a3b8"/><circle cx="102" cy="52" r="8" fill="#94a3b8"/><path d="M52 31h56" stroke="#94a3b8" stroke-width="6" stroke-linecap="round"/></svg>',
   )
+
+function getProductImage(photo) {
+  if (!photo) return DEFAULT_PRODUCT_IMAGE
+  if (/^(https?:|data:|blob:)/i.test(photo)) return photo
+  const normalized = String(photo)
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/^storage\/app\/public\//, "")
+    .replace(/^public\//, "")
+    .replace(/^storage\//, "")
+  return `/storage/${normalized}`
+}
 
 function safeNumber(value, fallback = 0) {
   const parsed = Number(value)
@@ -254,7 +312,7 @@ function buildInventoryData(products, stocks, lots) {
       sku: product.code || `SKU-${String(index + 1).padStart(4, "0")}`,
       name: product.nom || product.name || "Produit",
       category: getRelation(product, "categorie")?.nom || product.categorie_nom || product.category || "Non catégorisé",
-      image: product.photo ? `/storage/${product.photo}` : product.image || DEFAULT_PRODUCT_IMAGE,
+      image: getProductImage(product.photo || product.image),
       sourceCurrencyId: latestCurrency?.id ?? latestLot?.id_devise ?? null,
       sourceCurrencyCode: latestCurrency?.code ?? latestLot?.devise?.code ?? "",
       sourceCurrencySymbol: getCurrencyLabel(latestCurrency, latestLot?.devise?.symbole ?? ""),
@@ -409,7 +467,7 @@ export default function StockReportsPage() {
       let credentials = undefined
 
       if (token) {
-        headers.set("Authorization", `Bearer ${tokenToUse}`)
+        headers.set("Authorization", `Bearer ${token}`)
   } else {
         credentials = "include"
       }
@@ -981,7 +1039,7 @@ export default function StockReportsPage() {
                 Vue FIFO des entrées, sorties et stocks par lot
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent id="stock-report-sheet">
               {fifoLoading ? (
                 <div className="p-6 text-sm text-muted-foreground">Chargement de la fiche FIFO...</div>
               ) : fifoError ? (
@@ -991,7 +1049,11 @@ export default function StockReportsPage() {
               ) : fifoHtml ? (
                 <>
                   <div className="overflow-x-auto">
-                    <div dangerouslySetInnerHTML={{ __html: fifoHtml }} />
+                    <iframe
+                      title="Fiche de stock FIFO"
+                      srcDoc={fifoHtml}
+                      className="h-[720px] min-w-[980px] w-full border-0"
+                    />
                   </div>
                   <div className="flex justify-end mt-4 print:hidden">
                     <Button
@@ -1020,7 +1082,7 @@ export default function StockReportsPage() {
 
         {/* Rapport Mouvements de Stock */}
         <TabsContent value="movements">
-          <Card>
+          <Card id="stock-report-movements">
             <CardHeader>
               <CardTitle>Mouvements de Stock</CardTitle>
               <CardDescription>Suivi des entrées et sorties d'inventaire</CardDescription>
@@ -1047,6 +1109,7 @@ export default function StockReportsPage() {
                             src={product.image}
                             alt={product.name}
                             className="w-10 h-10 rounded-lg object-cover"
+                            onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = DEFAULT_PRODUCT_IMAGE }}
                           />
                           <div>
                             <p className="font-medium text-foreground">{product.name}</p>
@@ -1144,13 +1207,21 @@ export default function StockReportsPage() {
                   )
                 })}
               </div>
+              <div className="report-export-button mt-6 flex justify-end border-t pt-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => exportSectionPdf("stock-report-movements", "rapport_mouvements_stock.pdf", "Rapport des mouvements de stock")}
+                >
+                  <Download className="mr-2 h-4 w-4" /> Exporter en PDF
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* Alertes Stock Faible */}
         <TabsContent value="lowstock">
-          <Card>
+          <Card id="stock-report-lowstock">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -1178,6 +1249,7 @@ export default function StockReportsPage() {
                             src={product.image}
                             alt={product.name}
                             className="w-12 h-12 rounded-lg object-cover"
+                            onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = DEFAULT_PRODUCT_IMAGE }}
                           />
                           <div>
                             <p className="font-semibold text-foreground">{product.name}</p>
@@ -1212,13 +1284,21 @@ export default function StockReportsPage() {
                   </div>
                 )}
               </div>
+              <div className="report-export-button mt-6 flex justify-end border-t pt-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => exportSectionPdf("stock-report-lowstock", "rapport_alertes_stock.pdf", "Rapport des alertes de stock")}
+                >
+                  <Download className="mr-2 h-4 w-4" /> Exporter en PDF
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* Rapport Évaluation des Stocks */}
         <TabsContent value="valuation">
-          <Card>
+          <Card id="stock-report-valuation">
             <CardHeader>
               <CardTitle>Évaluation des Stocks</CardTitle>
               <CardDescription>Valeur financière de l'inventaire actuel</CardDescription>
@@ -1291,13 +1371,21 @@ export default function StockReportsPage() {
                   </CardContent>
                 </Card>
               </div>
+              <div className="report-export-button mt-6 flex justify-end border-t pt-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => exportSectionPdf("stock-report-valuation", "rapport_evaluation_stock.pdf", "Rapport d'évaluation du stock")}
+                >
+                  <Download className="mr-2 h-4 w-4" /> Exporter en PDF
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* Historique des Réapprovisionnements */}
         <TabsContent value="restock-history">
-          <Card>
+          <Card id="stock-report-restock">
             <CardHeader>
               <CardTitle>Historique des Réapprovisionnements</CardTitle>
               <CardDescription>Enregistrement de toutes les activités de réapprovisionnement</CardDescription>
@@ -1351,6 +1439,14 @@ export default function StockReportsPage() {
                     </Table>
                   </div>
                 ))}
+              </div>
+              <div className="report-export-button mt-6 flex justify-end border-t pt-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => exportSectionPdf("stock-report-restock", "rapport_reapprovisionnements.pdf", "Historique des réapprovisionnements")}
+                >
+                  <Download className="mr-2 h-4 w-4" /> Exporter en PDF
+                </Button>
               </div>
             </CardContent>
           </Card>
