@@ -7,7 +7,7 @@ import { backendRequest } from "@/app/services/backend"
 import formatMoney from "@/lib/formatMoney"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -147,6 +147,7 @@ function EditSingleLigneDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Modifier la devise - {ligne?.produit?.nom}</DialogTitle>
+          <DialogDescription>Choisissez la devise utilisée pour cette ligne d'approvisionnement.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2 rounded-lg bg-muted/50 p-4">
@@ -274,6 +275,7 @@ function EditMultipleLignesDialog({
       <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Modifier la devise pour plusieurs produits</DialogTitle>
+          <DialogDescription>Appliquez une devise aux lignes sélectionnées.</DialogDescription>
         </DialogHeader>
         
         <div className="space-y-4 flex-1 overflow-y-auto">
@@ -1155,6 +1157,7 @@ export default function ApprovisionnementsPage() {
         <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{editing ? "Modifier l'approvisionnement" : "Nouvel approvisionnement"}</DialogTitle>
+            <DialogDescription>Renseignez le fournisseur, les produits, les quantités et leurs prix d'achat et de vente.</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-5 overflow-y-auto flex-1 pr-1">
@@ -1389,6 +1392,7 @@ export default function ApprovisionnementsPage() {
         <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Détails de l’approvisionnement {selectedApprovisionnement?.code ?? ""}</DialogTitle>
+            <DialogDescription>Consultez les lignes, les prix et les lots de cet approvisionnement.</DialogDescription>
           </DialogHeader>
           {selectedApprovisionnement ? (
             <div className="space-y-4 overflow-y-auto">
