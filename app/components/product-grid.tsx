@@ -99,6 +99,7 @@ export default function ProductGrid({ category, searchQuery, products }: Product
         ...variantDialogProduct,
         selectedVariantId: variant.id,
         variantCombination: variant.combinaison ?? null,
+        price: Number(variant.prix_vente ?? variantDialogProduct.price ?? 0),
         stock: Number(variant.quantite_stock ?? variantDialogProduct.stock ?? 0),
         name: `${variantDialogProduct.name}${variant.combinaison ? ` - ${Object.values(variant.combinaison).join(" / ")}` : ""}`,
       }
@@ -190,19 +191,20 @@ export default function ProductGrid({ category, searchQuery, products }: Product
       )}
 
       <Dialog open={Boolean(variantDialogProduct)} onOpenChange={(open) => !open && setVariantDialogProduct(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Sélectionner une variante</DialogTitle>
+        <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden border-[#d9d1c3] bg-[#fffdf9] p-0 sm:max-w-lg">
+          <DialogHeader className="shrink-0 border-b border-[#ebe4d9] bg-[#f8f3ea] px-5 py-4">
+            <DialogTitle className="text-[#315b45]">Choisir les variantes</DialogTitle>
+            <p className="text-sm text-[#718075]">{variantDialogProduct?.name} · sélectionnez les quantités à ajouter.</p>
           </DialogHeader>
 
-          <div className="space-y-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4 [scrollbar-color:#9bb49d_transparent]">
             {variantDialogProduct?.variants?.map((variant) => {
               const quantity = Number(variantSelections[variant.id] ?? 0)
               const label = variant.combinaison ? Object.values(variant.combinaison).join(" / ") : `Variante ${variant.id}`
               const isStockEmpty = Number(variant.quantite_stock ?? 0) <= 0
 
               return (
-                <div key={variant.id} className="flex items-center gap-2 rounded-lg border px-3 py-2">
+                <div key={variant.id} className={`flex items-center gap-3 rounded-2xl border px-3 py-3 transition ${quantity > 0 ? "border-[#9fbea4] bg-[#f0f7ef]" : "border-[#e5ded3] bg-white"}`}>
                   <input
                     type="checkbox"
                     checked={quantity > 0}
@@ -217,8 +219,11 @@ export default function ProductGrid({ category, searchQuery, products }: Product
                     className="h-4 w-4"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium">{label}</div>
-                    <div className="text-xs text-muted-foreground">Stock: {Number(variant.quantite_stock ?? 0)}</div>
+                    <div className="truncate font-semibold text-[#315b45]">{label}</div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-[#718075]">
+                      <span>Stock : {Number(variant.quantite_stock ?? 0)}</span>
+                      <span className="font-semibold text-[#c56c42]">{variantDialogProduct.currencySymbol ?? "$"}{Number(variant.prix_vente ?? variantDialogProduct.price ?? 0).toFixed(2)}</span>
+                    </div>
                   </div>
                   <input
                     type="number"
@@ -240,11 +245,11 @@ export default function ProductGrid({ category, searchQuery, products }: Product
             })}
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setVariantDialogProduct(null)}>
+          <div className="shrink-0 flex justify-end gap-2 border-t border-[#ebe4d9] bg-[#fffdf9] px-5 py-4">
+            <Button type="button" variant="outline" className="border-[#d9d1c3]" onClick={() => setVariantDialogProduct(null)}>
               Annuler
             </Button>
-            <Button type="button" onClick={confirmVariantSelection}>
+            <Button type="button" className="bg-[#315b45] hover:bg-[#264a37]" onClick={confirmVariantSelection}>
               Ajouter au panier
             </Button>
           </div>

@@ -37,6 +37,7 @@ type BackendVariant = {
   id: number
   code_sku?: string
   combinaison?: Record<string, string> | null
+  prix_vente?: number | string | null
   quantite_stock?: number | string | null
   seuil_alerte?: number | string | null
 }
@@ -491,7 +492,10 @@ export default function POSPage() {
         const mappedProducts: Product[] = sourceRows.map((row) => {
           const product = productById.get(row.id)
           const latestLot = latestLotByProduct.get(row.id)
-          const productPrice = Number(product?.prix_vente ?? latestLot?.ligne_approvisionnement?.prix_vente ?? latestLot?.ligne_approvisionnement?.prix_unitaire ?? 0)
+          const variantPrices = (product?.variantes ?? [])
+            .map((variant) => Number(variant.prix_vente))
+            .filter((price) => Number.isFinite(price) && price >= 0)
+          const productPrice = Number(product?.prix_vente ?? (variantPrices.length > 0 ? variantPrices[0] : undefined) ?? latestLot?.ligne_approvisionnement?.prix_vente ?? latestLot?.ligne_approvisionnement?.prix_unitaire ?? 0)
           const categoryName = product?.categorie?.nom ?? "Autres"
           const currencySymbol = latestLot?.devise?.symbole ?? latestLot?.devise?.code ?? "$"
           const variantStock = product?.has_variantes
@@ -513,6 +517,7 @@ export default function POSPage() {
               id: variant.id,
               code_sku: variant.code_sku,
               combinaison: variant.combinaison ?? null,
+              prix_vente: Number(variant.prix_vente ?? productPrice),
               quantite_stock: Number(variant.quantite_stock ?? 0),
               seuil_alerte: Number(variant.seuil_alerte ?? 0),
             })),

@@ -98,7 +98,7 @@ export default function VariantesPage() {
       const payload = {
         produit_id: Number(formData.produit_id),
         combinaison: parsedCombination,
-        prix: formData.prix ? Number(formData.prix) : null,
+        prix_vente: formData.prix ? Number(formData.prix) : null,
         stock: formData.stock ? Number(formData.stock) : 0,
         stock_alerte: formData.stock_alerte ? Number(formData.stock_alerte) : 0,
       }

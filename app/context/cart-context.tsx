@@ -6,6 +6,7 @@ export interface ProductVariant {
   id: number
   code_sku?: string
   combinaison?: Record<string, string> | null
+  prix_vente?: number
   quantite_stock?: number
   seuil_alerte?: number
 }

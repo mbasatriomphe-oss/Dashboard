@@ -356,6 +356,7 @@ export default function ProductsPage() {
             body: JSON.stringify({
               produit_id: createdProduct.id,
               combinaison: combination,
+              prix_vente: formData.prix_vente !== "" ? Number(formData.prix_vente) : null,
               stock: 0,
               stock_alerte: 0,
             }),
