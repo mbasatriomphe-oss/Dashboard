@@ -121,8 +121,15 @@ function slugify(value: string) {
 function getPhotoUrl(photo: string | null | undefined) {
   if (!photo) return "/placeholder.svg"
   if (photo.startsWith("http://") || photo.startsWith("https://") || photo.startsWith("blob:")) return photo
-  // Use relative path — proxied through Next.js /storage/* rewrite
-  return `/storage/${photo.replace(/^\/+/, "")}`
+
+  const normalizedPhoto = photo
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/^storage\/app\/public\//, "")
+    .replace(/^public\//, "")
+    .replace(/^storage\//, "")
+
+  return `/storage/${normalizedPhoto}`
 }
 
 function getToday() {

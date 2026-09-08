@@ -144,6 +144,12 @@ export default function ProductGrid({ category, searchQuery, products }: Product
               alt={product.name}
               className="h-full w-full object-cover"
               loading="lazy"
+              onError={(event) => {
+                const image = event.currentTarget
+                if (image.src.endsWith("/placeholder.svg")) return
+                image.onerror = null
+                image.src = "/placeholder.svg"
+              }}
             />
             {(product.stock ?? 0) <= 0 && (
               <div className="absolute left-2 top-2 z-10">
