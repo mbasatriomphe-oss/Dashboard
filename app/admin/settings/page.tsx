@@ -577,7 +577,7 @@ export default function AdminSettingsPage() {
     }
   }
 
-  // Créer un administrateur via route publique (utiliser avec précaution)
+  // Créer un administrateur depuis l'espace déjà protégé par le middleware admin.
   const createAdmin = async () => {
     const nom = prompt('Nom (admin) :')
     if (!nom) return
@@ -586,12 +586,10 @@ export default function AdminSettingsPage() {
     if (!email) return
     const password = prompt('Mot de passe :')
     if (!password) return
-    const secret = prompt('Clé secrète admin :')
-    if (!secret) return
     try {
-      await backendRequest('/register-admin', {
+      await backendRequest('/users', {
         method: 'POST',
-        body: JSON.stringify({ nom, prenom, email, password, password_confirmation: password, secret }),
+        body: JSON.stringify({ nom, prenom, email, password, password_confirmation: password, role: 'admin' }),
       })
       toast.success('Administrateur créé')
     } catch (error) {
