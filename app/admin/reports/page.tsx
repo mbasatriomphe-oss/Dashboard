@@ -1218,7 +1218,11 @@ export default function ShopReportsPage() {
         const headers: Record<string, string> = { Accept: 'application/pdf' }
         if (token) headers['Authorization'] = `Bearer ${token}`
 
-        const res = await fetch(path, { method: 'GET', headers, credentials: 'include' })
+        const query = new URLSearchParams({
+          date_debut: format(startDate, 'yyyy-MM-dd'),
+          date_fin: format(endDate, 'yyyy-MM-dd'),
+        })
+        const res = await fetch(`${path}?${query.toString()}`, { method: 'GET', headers, credentials: 'include' })
         if (!res.ok) {
           throw new Error('Echec génération PDF')
         }
